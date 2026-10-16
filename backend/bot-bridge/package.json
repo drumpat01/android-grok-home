@@ -1,0 +1,12 @@
+{
+  "name": "grok-home-bot-bridge",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bdk": "bdk",
+    "test": "node --test client.test.mjs activity-reader.test.mjs native-activity.test.mjs"
+  },
+  "dependencies": {
+    "@cursor/bdk": "0.2.25"
+  }
+}

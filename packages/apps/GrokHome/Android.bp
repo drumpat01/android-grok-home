@@ -1,0 +1,12 @@
+// Historical ROM integration stub. The voice APK is built with Gradle;
+// a future platform integration must supply compatible okhttp3/okio dependencies.
+android_app {
+    name: "GrokHome",
+    srcs: ["src/**/*.java"],
+    manifest: "AndroidManifest.xml",
+    resource_dirs: ["res"],
+    sdk_version: "current",
+    min_sdk_version: "30",
+    system_ext_specific: true,
+    optimize: { enabled: true },
+}
