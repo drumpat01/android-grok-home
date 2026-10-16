@@ -24,7 +24,7 @@ The debug APK is `app/build/outputs/apk/debug/app-debug.apk`. Instrumentation te
 
 ## Configure existing bots
 
-Install Node.js 22 or later and Python 3.10 or later. From the repository root:
+Install Node.js 22.13 or later and Python 3.10 or later. From the repository root:
 
 ```sh
 cd backend/bot-bridge
@@ -61,7 +61,7 @@ Keep BDK port 8790 on loopback. LAN mode trusts the configured private network; 
 
 The native activity reader uses undocumented Cursor desktop APIs and internal BDK imports. It may break when upstream interfaces change. The adapter is isolated from the regular send/check path. Users supply their own account access; no provider credentials are included.
 
-Local credentials, bot configuration, build outputs, diagnostic dumps, and signing keys are ignored by Git. Never upload real conversations, login state, or private device captures. Known upstream dependency advisories remain; see [SECURITY.md](SECURITY.md) before running the bridge.
+Local credentials, bot configuration, build outputs, diagnostic dumps, and signing keys are ignored by Git. Never upload real conversations, login state, or private device captures. Patched transitive dependencies are pinned through npm overrides; see [SECURITY.md](SECURITY.md) for the current audit status and OAuth upgrade notes.
 
 ## License
 

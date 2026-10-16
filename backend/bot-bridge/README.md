@@ -1,6 +1,6 @@
 # Existing-bot bridge
 
-The bridge uses pinned `@cursor/bdk` 0.2.25 and the signed-in user's own credentials. It forwards explicitly requested messages to a configured existing bot and returns the delivered reply. It does not automatically retry sends.
+The bridge uses pinned `@cursor/bdk` 0.2.26 and the signed-in user's own credentials. It forwards explicitly requested messages to a configured existing bot and returns the delivered reply. It does not automatically retry sends.
 
 Run `npm ci`, copy `bots.example.json` to ignored `bots.local.json`, and enter exact bot names from your account. Unknown names can cause upstream bot creation; verify names first. Run `npx bdk login` locally, then `bash scripts/start-bot-bridge.sh` from the repository root.
 
