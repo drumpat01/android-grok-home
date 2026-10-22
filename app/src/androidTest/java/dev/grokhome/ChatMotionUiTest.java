@@ -13,6 +13,9 @@ import static org.junit.Assert.*;
 /** Synthetic read-only UI regressions; never sends bot messages. */
 @RunWith(AndroidJUnit4.class)
 public class ChatMotionUiTest {
+    private FirstRunTestGate firstRun;
+    @Before public void hideFirstRun(){firstRun=new FirstRunTestGate();}
+    @After public void restoreFirstRun(){firstRun.restore();}
     private static Object field(Object owner,String name)throws Exception{Field f=owner.getClass().getDeclaredField(name);f.setAccessible(true);return f.get(owner);}
     private static void invoke(Object owner,String name)throws Exception{Method m=owner.getClass().getDeclaredMethod(name);m.setAccessible(true);m.invoke(owner);}
     private static void switchTo(HomeActivity home,String name)throws Exception{Method m=HomeActivity.class.getDeclaredMethod("selectBot",String.class,int.class);m.setAccessible(true);m.invoke(home,name,BotIdentity.color(name));}

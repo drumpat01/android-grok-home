@@ -16,6 +16,9 @@ import static org.junit.Assert.*;
 /** Real touch streams against the stage. No bot messages are sent. */
 @RunWith(AndroidJUnit4.class)
 public class BotCarouselUiTest {
+    private FirstRunTestGate firstRun;
+    @Before public void hideFirstRun(){firstRun=new FirstRunTestGate();}
+    @After public void restoreFirstRun(){firstRun.restore();}
     private static Object field(Object owner,String name)throws Exception{Field f=owner.getClass().getDeclaredField(name);f.setAccessible(true);return f.get(owner);}
     private static void invoke(Object owner,String name)throws Exception{Method m=owner.getClass().getDeclaredMethod(name);m.setAccessible(true);m.invoke(owner);}
     private static void select(HomeActivity home,String name)throws Exception{Method m=HomeActivity.class.getDeclaredMethod("selectBot",String.class,int.class);m.setAccessible(true);m.invoke(home,name,BotIdentity.color(name));}
@@ -58,20 +61,20 @@ public class BotCarouselUiTest {
             Thread.sleep(600);capture("carousel-landscape");
             scenario.onActivity(home->{try{
                 BotView bot=(BotView)field(home,"bot");assertTrue("Pinch in opens overview",bot.isOverview());
-                select(home,"Luna");swipe(home,1);
+                select(home,"Sage");swipe(home,1);
             }catch(Exception e){throw new AssertionError(e);}});
             Thread.sleep(600);
-            scenario.onActivity(home->{try{assertEquals("Max",field(home,"selectedBot"));swipe(home,-1);}catch(Exception e){throw new AssertionError(e);}});
+            scenario.onActivity(home->{try{assertEquals("Orion",field(home,"selectedBot"));swipe(home,-1);}catch(Exception e){throw new AssertionError(e);}});
             Thread.sleep(600);
-            scenario.onActivity(home->{try{assertEquals("Luna",field(home,"selectedBot"));invoke(home,"showKeyboard");pauseFeed(home);assertNotNull(field(home,"chatPanel"));swipe(home,1);}catch(Exception e){throw new AssertionError(e);}});
+            scenario.onActivity(home->{try{assertEquals("Sage",field(home,"selectedBot"));invoke(home,"showKeyboard");pauseFeed(home);assertNotNull(field(home,"chatPanel"));swipe(home,1);}catch(Exception e){throw new AssertionError(e);}});
             Thread.sleep(600);capture("carousel-chat-landscape");
-            scenario.onActivity(home->{try{assertEquals("Max",field(home,"selectedBot"));assertNotNull("Stage swipe keeps chat open",field(home,"chatPanel"));pinch(home,false);}catch(Exception e){throw new AssertionError(e);}});
+            scenario.onActivity(home->{try{assertEquals("Orion",field(home,"selectedBot"));assertNotNull("Stage swipe keeps chat open",field(home,"chatPanel"));pinch(home,false);}catch(Exception e){throw new AssertionError(e);}});
             Thread.sleep(600);
             scenario.onActivity(home->{try{BotView bot=(BotView)field(home,"bot");assertFalse("Pinch out returns to single bot",bot.isOverview());assertNotNull(field(home,"chatPanel"));swipe(home,1);}catch(Exception e){throw new AssertionError(e);}});
             Thread.sleep(1100);
-            scenario.onActivity(home->{try{assertEquals("Scout",field(home,"selectedBot"));assertNotNull(field(home,"chatPanel"));swipe(home,-1);}catch(Exception e){throw new AssertionError(e);}});
+            scenario.onActivity(home->{try{assertEquals("Max",field(home,"selectedBot"));assertNotNull(field(home,"chatPanel"));swipe(home,-1);}catch(Exception e){throw new AssertionError(e);}});
             Thread.sleep(1100);
-            scenario.onActivity(home->{try{assertEquals("Max",field(home,"selectedBot"));assertNotNull(field(home,"chatPanel"));pinch(home,true);}catch(Exception e){throw new AssertionError(e);}});
+            scenario.onActivity(home->{try{assertEquals("Orion",field(home,"selectedBot"));assertNotNull(field(home,"chatPanel"));pinch(home,true);}catch(Exception e){throw new AssertionError(e);}});
             Thread.sleep(600);
             scenario.onActivity(home->{try{BotView bot=(BotView)field(home,"bot");assertTrue(bot.isOverview());long t=android.os.SystemClock.uptimeMillis();point(home,t,MotionEvent.ACTION_DOWN,bot.getWidth()/2f,bot.getHeight()*.4f);point(home,t+100,MotionEvent.ACTION_UP,bot.getWidth()/2f,bot.getHeight()*.4f);assertFalse("Center tap zooms in",bot.isOverview());home.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);}catch(Exception e){throw new AssertionError(e);}});
             Thread.sleep(900);
@@ -79,7 +82,7 @@ public class BotCarouselUiTest {
             Thread.sleep(600);capture("carousel-chat-portrait");
             scenario.onActivity(home->{try{assertTrue(((BotView)field(home,"bot")).isOverview());assertNotNull(field(home,"chatPanel"));swipe(home,1);}catch(Exception e){throw new AssertionError(e);}});
             Thread.sleep(600);
-            scenario.onActivity(home->{try{assertEquals("Scout",field(home,"selectedBot"));((BotView)field(home,"bot")).setOverview(false);select(home,original[0]);pauseFeed(home);invoke(home,"closeOverlay");home.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);}catch(Exception e){throw new AssertionError(e);}});
+            scenario.onActivity(home->{try{assertEquals("Max",field(home,"selectedBot"));((BotView)field(home,"bot")).setOverview(false);select(home,original[0]);pauseFeed(home);invoke(home,"closeOverlay");home.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);}catch(Exception e){throw new AssertionError(e);}});
             Thread.sleep(1200);
         }
     }

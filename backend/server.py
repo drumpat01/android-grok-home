@@ -12,8 +12,14 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlsplit, parse_qs
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from answer_gateway import parse_answer
 
 ENV_FILE = Path(__file__).with_name('.env')
+VERSION_FILE = Path(__file__).with_name('VERSION')
+
+def service_version(path=VERSION_FILE):
+    """One version string, shared with backend/VERSION. Not a hard-coded literal."""
+    return path.read_text(encoding='utf-8').strip()
 XAI_ENDPOINT = 'https://api.x.ai/v1/realtime/client_secrets'
 
 
@@ -45,13 +51,15 @@ def mint_token(key):
 
 class TokenServer(ThreadingHTTPServer):
     daemon_threads = True
-    def __init__(self, address, handler=None, lan_cidr=None, enable_bots=False, disable_xai=False, tailscale_host=None):
+    def __init__(self, address, handler=None, lan_cidr=None, enable_bots=False, disable_xai=False, tailscale_host=None, only_client=None):
+        self.only_client = ipaddress.ip_address(only_client) if only_client else None
         if tailscale_host and (address[0] != '127.0.0.1' or not tailscale_host.endswith('.ts.net') or any(c not in 'abcdefghijklmnopqrstuvwxyz0123456789.-' for c in tailscale_host)):
             raise ValueError('Tailscale proxy requires loopback and an exact ts.net hostname')
         self.tailscale_host = tailscale_host
         self.xai_enabled = not disable_xai
         self.bot_gateway = None
         self.activity_gateway = None
+        self.answer_gateway = None
         from app_updates import UpdateStore
         self.update_store=UpdateStore()
         if enable_bots:
@@ -59,6 +67,8 @@ class TokenServer(ThreadingHTTPServer):
             self.bot_gateway = BotGateway()
             from activity_gateway import ActivityGateway
             self.activity_gateway = ActivityGateway(self.bot_gateway.roster)
+            from answer_gateway import ANSWER_STORE, AnswerGateway
+            self.answer_gateway = AnswerGateway(self.activity_gateway, store_path=ANSWER_STORE)
         self.lan = ipaddress.ip_network(lan_cidr) if lan_cidr else None
         private_blocks = [ipaddress.ip_network(cidr) for cidr in ('10.0.0.0/8','172.16.0.0/12','192.168.0.0/16')]
         if self.lan and not any(self.lan.subnet_of(block) for block in private_blocks):
@@ -69,6 +79,7 @@ class TokenServer(ThreadingHTTPServer):
         super().__init__(address, handler or Handler)
         self.sessions = collections.deque()
         self.rate_lock = threading.Lock()
+        self.started_at = int(time.time())
 
     def allow_session(self):
         with self.rate_lock:
@@ -110,6 +121,8 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 pass
         allowed_client = client.is_loopback or bool(self.server.lan and client in self.server.lan)
+        if self.server.only_client and not client.is_loopback:
+            allowed_client = client == self.server.only_client
         return allowed_client and allowed_host and not any(
             self.headers.get(h) for h in ('Origin', 'Referer', 'Sec-Fetch-Site'))
 
@@ -144,11 +157,22 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200 if job else 404, job or {'error': 'job_not_found'})
         if self.path != '/health':
             return self.reply(404, {'error': 'not_found'})
-        self.reply(200, {'service': 'grok-home-voice', 'key_configured': self.server.xai_enabled and bool(read_key()), 'xai_enabled': self.server.xai_enabled, 'bots_enabled': bool(self.server.bot_gateway), 'activity_enabled': bool(self.server.activity_gateway), 'updates_enabled':True,'team_stage_enabled':bool(self.server.bot_gateway)})
+        self.reply(200, {'service': 'grok-home-voice', 'key_configured': self.server.xai_enabled and bool(read_key()), 'xai_enabled': self.server.xai_enabled, 'bots_enabled': bool(self.server.bot_gateway), 'activity_enabled': bool(self.server.activity_gateway), 'updates_enabled':True,'team_stage_enabled':bool(self.server.bot_gateway),'raise_hand_enabled':bool(self.server.activity_gateway), 'version':service_version(), 'started_at':self.server.started_at})
 
     def do_POST(self):
         if not self.local_request():
             return self.reply(403, {'error': 'local_clients_only'})
+        if self.server.answer_gateway and self.path == '/bot/answer':
+            if self.headers.get('Content-Type','').split(';')[0]!='application/json':return self.reply(415,{'error':'json_required'})
+            try:
+                size=int(self.headers.get('Content-Length','-1'))
+                if not 0<=size<=4000:return self.reply(413,{'error':'invalid_length'})
+                data=json.loads(self.rfile.read(size))
+                bot,needs_you_id,option_id,key=parse_answer(data)
+                return self.reply(200,self.server.answer_gateway.submit(bot,needs_you_id,option_id,key))
+            except ValueError as error:
+                code=str(error)
+                return self.reply(400,{'error':code if code in ('choose_configured_bot','invalid_request','invalid_idempotency_key') else 'invalid_request'})
         if self.server.bot_gateway and self.path == '/bot/cancel':
             if self.headers.get('Content-Type','').split(';')[0]!='application/json':return self.reply(415,{'error':'json_required'})
             try:
@@ -222,7 +246,8 @@ if __name__ == '__main__':
     parser.add_argument('--enable-bots', action='store_true', help='Enable the configured Cursor BDK bridge')
     parser.add_argument('--disable-xai', action='store_true', help='Use Cursor bots and tablet speech only; never read or use the xAI key')
     parser.add_argument('--tailscale-host', help='Exact private HTTPS hostname forwarded by Tailscale Serve to a loopback listener')
+    parser.add_argument('--only-client', help='Accept non-loopback requests only from this single IP address')
     args = parser.parse_args()
     print(f'Grok voice broker listening on http://{args.bind}:{args.port}', flush=True)
     print('xAI disabled; using Cursor bots and tablet speech.' if args.disable_xai else 'Optional xAI voice credentials: backend/.env.', flush=True)
-    TokenServer((args.bind, args.port), lan_cidr=args.lan_cidr, enable_bots=args.enable_bots, disable_xai=args.disable_xai, tailscale_host=args.tailscale_host).serve_forever()
+    TokenServer((args.bind, args.port), lan_cidr=args.lan_cidr, enable_bots=args.enable_bots, disable_xai=args.disable_xai, tailscale_host=args.tailscale_host, only_client=args.only_client).serve_forever()

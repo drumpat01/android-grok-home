@@ -23,11 +23,11 @@ final class VoiceNavigation {
             for(String prefix:new String[]{"show ","switch to ","show me ","let me talk to "}){
                 String target=text.startsWith(prefix)?text.substring(prefix.length()):"";
                 String alias=name.equals("Scout")?"j d leads":normalized;
-                if(prefix.equals("let me talk to "))for(String candidate:new String[]{normalized,alias}){
+                if(prefix.equals("let me talk to "))for(String candidate:new String[]{normalized,alias,name.equals("Nova")?"kitt":normalized}){
                     String marker=candidate+" about ";
                     if(target.startsWith(marker) && target.length()>marker.length())return new VoiceNavigation(Action.HANDOFF,name,clean.substring(text.indexOf(" about ")+7).replaceAll("[.!?]+$", "").trim());
                 }
-                if(target.equals(normalized) || name.equals("Scout") && target.equals("j d leads"))return new VoiceNavigation(Action.SELECT,name);
+                if(target.equals(normalized) || name.equals("Nova") && target.equals("kitt") || name.equals("Scout") && target.equals("j d leads"))return new VoiceNavigation(Action.SELECT,name);
             }
         }
         return null;

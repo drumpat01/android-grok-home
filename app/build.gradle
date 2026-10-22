@@ -2,15 +2,22 @@ plugins { id 'com.android.application' }
 android {
     namespace 'dev.grokhome'
     compileSdk 34
-    defaultConfig { applicationId 'dev.grokhome'; minSdk 30; targetSdk 34; versionCode 29; versionName '0.18.0-team-stage'; testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner' }
+    defaultConfig { applicationId 'dev.grokhome'; minSdk 30; targetSdk 34; versionCode 62; versionName '0.21.2-roster'; testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner' }
+    androidResources { noCompress 'zip' }
     sourceSets { main { manifest.srcFile '../packages/apps/GrokHome/AndroidManifest.xml'; java.srcDirs = ['../packages/apps/GrokHome/src']; res.srcDirs = ['../packages/apps/GrokHome/res'] } }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    testOptions { unitTests.includeAndroidResources = true }
 }
 dependencies {
     implementation 'androidx.core:core:1.13.1'
+    implementation 'androidx.customview:customview:1.1.0'
+    implementation 'net.java.dev.jna:jna:5.13.0@aar'
+    implementation 'com.alphacephei:vosk-android:0.3.47'
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.json:json:20240303'
     testImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
+    testImplementation 'org.robolectric:robolectric:4.14.1'
     androidTestImplementation 'androidx.test:runner:1.5.2'
     androidTestImplementation 'androidx.test:core:1.5.0'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'

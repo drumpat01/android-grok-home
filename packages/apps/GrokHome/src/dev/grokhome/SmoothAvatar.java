@@ -21,7 +21,10 @@ final class SmoothAvatar {
     private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
     private final DistanceMap map;
     private final double[] axis=new double[3];
+    /** 0.62 for the rounded slabs; 1 makes the "sphere" shape a real ball. */
+    private final float depth;
     SmoothAvatar(Context context,String shape){
+        depth="sphere".equals(shape)?1f:.62f;
         try(InputStream stream=context.getResources().openRawResource(R.raw.rounded_avatar);
             ByteArrayOutputStream source=new ByteArrayOutputStream()){
             byte[] buffer=new byte[4096];int size;while((size=stream.read(buffer))!=-1)source.write(buffer,0,size);
@@ -38,13 +41,13 @@ final class SmoothAvatar {
     }
     void draw(Canvas canvas,Motion motion,int color,float radius){
         motion.rotate(1,0,0,axis);setAxis("axisX");motion.rotate(0,1,0,axis);setAxis("axisY");motion.rotate(0,0,1,axis);setAxis("axisZ");
-        shader.setFloatUniform("pixelSize",1f/radius);shader.setColorUniform("baseColor",color);
+        shader.setFloatUniform("pixelSize",1f/radius);shader.setFloatUniform("depth",depth);shader.setColorUniform("baseColor",color);
         canvas.drawRect(-1.5f,-1.5f,1.5f,1.5f,paint);
     }
     private void setAxis(String name){shader.setFloatUniform(name,(float)axis[0],(float)axis[1],(float)axis[2]);}
     double surfaceZ(double x,double y){
-        double d=distance(x,y),q=Math.max(0,d+.62);
-        return Math.sqrt(Math.max(0,.62*.62-q*q));
+        double d=distance(x,y),q=Math.max(0,d+depth);
+        return Math.sqrt(Math.max(0,(double)depth*depth-q*q));
     }
     private float distance(double x,double y){
         double tx=(x+1.3)/UNIT-.5,ty=(y+1.3)/UNIT-.5;

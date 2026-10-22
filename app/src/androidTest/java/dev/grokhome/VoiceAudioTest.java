@@ -26,8 +26,11 @@ public class VoiceAudioTest {
         hadAuto=prefs.contains("auto_listen");hadMuted=prefs.contains("muted");
         previousAuto=prefs.getBoolean("auto_listen",false);previousMuted=prefs.getBoolean("muted",false);
         prefs.edit().putBoolean("auto_listen",false).putBoolean("muted",true).commit();
+        firstRun=new FirstRunTestGate();
     }
+    private FirstRunTestGate firstRun;
     @After public void restorePreferences(){
+        firstRun.restore();
         SharedPreferences.Editor edit=prefs.edit();
         if(hadAuto)edit.putBoolean("auto_listen",previousAuto);else edit.remove("auto_listen");
         if(hadMuted)edit.putBoolean("muted",previousMuted);else edit.remove("muted");edit.commit();

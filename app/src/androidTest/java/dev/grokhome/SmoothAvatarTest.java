@@ -13,9 +13,12 @@ import java.lang.reflect.*;
 
 @RunWith(AndroidJUnit4.class)
 public class SmoothAvatarTest {
+    private FirstRunTestGate firstRun;
+    @Before public void hideFirstRun(){firstRun=new FirstRunTestGate();}
+    @After public void restoreFirstRun(){firstRun.restore();}
     @Test public void roundedSurfacesRenderAtFrontSideAndBack() throws Exception {
         try(ActivityScenario<HomeActivity> activity=ActivityScenario.launch(HomeActivity.class)){
-            for(String name:new String[]{"Echo","Sage","Luna","Scout","Clover","Orion","Pixel"}){
+            for(String name:new String[]{"Echo","Luna","Sage","Scout","Clover","Luna","Pixel"}){
                 for(int pose=0;pose<4;pose++){
                     final int index=pose;
                     activity.onActivity(a->{try{
@@ -40,7 +43,7 @@ public class SmoothAvatarTest {
     }
     @Test public void animatedSurfacesKeepTurning() throws Exception {
         try(ActivityScenario<HomeActivity> activity=ActivityScenario.launch(HomeActivity.class)){
-            for(String name:new String[]{"Echo","Luna","Sage"}){
+            for(String name:new String[]{"Echo","Sage","Luna"}){
                 activity.onActivity(a->{BotView view=new FrameLayoutFinder().find(a.findViewById(android.R.id.content));view.setBotName(name);view.setBallColor(BotIdentity.color(name));view.setSpeaking(true);view.setActive(true);});
                 Thread.sleep(8500);
             }

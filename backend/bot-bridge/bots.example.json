@@ -1,3 +1,72 @@
 [
-  { "name": "Max", "color": "#FF334D" }
+  {
+    "name": "Max",
+    "color": "#FFFFFF",
+    "shape": "sphere"
+  },
+  {
+    "name": "Scout",
+    "color": "#F9670E",
+    "shape": "star"
+  },
+  {
+    "name": "Nova",
+    "color": "#FC2C3E",
+    "shape": "sphere"
+  },
+  {
+    "name": "Echo",
+    "color": "#FB3499",
+    "shape": "heart"
+  },
+  {
+    "name": "Pixel",
+    "color": "#777777",
+    "shape": "capsule"
+  },
+  {
+    "name": "Sage",
+    "color": "#FB3499",
+    "shape": "square"
+  },
+  {
+    "name": "Orion",
+    "color": "#777777",
+    "shape": "triangle"
+  },
+  {
+    "name": "Luna",
+    "color": "#905AFB",
+    "shape": "cloud"
+  },
+  {
+    "name": "Clover",
+    "color": "#14C370",
+    "shape": "hexagon"
+  },
+  {
+    "name": "Willow",
+    "color": "#FB3499",
+    "shape": "square"
+  },
+  {
+    "name": "Ember",
+    "color": "#FC2C3E",
+    "shape": "sphere"
+  },
+  {
+    "name": "Atlas",
+    "color": "#FC2C3E",
+    "shape": "sphere"
+  },
+  {
+    "name": "Juniper",
+    "color": "#A16B39",
+    "shape": "hexagon"
+  },
+  {
+    "name": "Harbor",
+    "color": "#777777",
+    "shape": "capsule"
+  }
 ]

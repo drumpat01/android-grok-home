@@ -16,6 +16,7 @@ public class VoiceClientTest {
     private volatile FakeAudio audio;
     private final List<JSONObject> sent = new CopyOnWriteArrayList<>();
     private final List<String> states = new CopyOnWriteArrayList<>();
+    private final List<String> details = new CopyOnWriteArrayList<>();
     private final List<String> transcripts = new CopyOnWriteArrayList<>();
     private final List<Boolean> speaking = new CopyOnWriteArrayList<>();
     private class FakeAudio implements VoiceClient.AudioIO {
@@ -39,10 +40,11 @@ public class VoiceClientTest {
         }));
         client=new VoiceClient(new OkHttpClient.Builder().readTimeout(2,TimeUnit.SECONDS).build(),
             (capture,speech,failure)->{audio=new FakeAudio(capture,speech);return audio;},new VoiceClient.Listener(){
-                public void state(String title,String detail){states.add(title);}
+                public void state(String title,String detail){states.add(title);details.add(detail);}
                 public void speaking(boolean value){speaking.add(value);}
                 public void transcript(String role,String text){transcripts.add(role+":"+text);}
             },realtime.url("/realtime").toString());
+        client.setBotName("Nova");
     }
     @After public void tearDown() throws Exception {client.close();broker.shutdown();realtime.shutdown();}
     private void token(){broker.enqueue(new MockResponse().setBody("{\"value\":\"TEST_EPHEMERAL\"}"));}
@@ -69,6 +71,8 @@ public class VoiceClientTest {
         event("{\"type\":\"conversation.item.input_audio_transcription.completed\",\"item_id\":\"u1\",\"transcript\":\"Hello\"}");
         event("{\"type\":\"response.output_audio_transcript.done\",\"item_id\":\"i1\",\"transcript\":\"Hi\"}");
         await(()->audio.played==4 && transcripts.size()==2);assertTrue(speaking.contains(true));
+        assertTrue(details.contains("Tap Nova to stop"));
+        assertFalse(details.contains("Tap the sphere to interrupt"));
         client.setMicrophone(false);assertFalse(audio.mic);await(()->sent("input_audio_buffer.clear"));
     }
     @Test public void interruptionFlushesAndTruncatesAtHeardAudio() throws Exception {
@@ -101,10 +105,10 @@ public class VoiceClientTest {
     }
     @Test public void serverAddressValidation(){
         assertEquals("http://127.0.0.1:8766/session",VoiceClient.sessionUrl("http://127.0.0.1:8766"));
-        assertEquals("http://192.168.1.10:8788/session",VoiceClient.sessionUrl("http://192.168.1.10:8788"));
+        assertEquals("http://192.168.1.20:8787/session",VoiceClient.sessionUrl("http://192.168.1.20:8787"));
         assertEquals("http://172.16.0.1/session",VoiceClient.sessionUrl("http://172.16.0.1"));
         assertEquals("http://10.0.0.1/session",VoiceClient.sessionUrl("http://10.0.0.1"));
-        for(String invalid:Arrays.asList("http://example.com","http://8.8.8.8","http://172.32.0.1","http://192.168.1.10.example.com","https://user:pass@example.com","https://example.com/wrong","bad")){
+        for(String invalid:Arrays.asList("http://example.com","http://8.8.8.8","http://172.32.0.1","http://192.168.1.20.example.com","https://user:pass@example.com","https://example.com/wrong","bad")){
             try{VoiceClient.sessionUrl(invalid);fail("Accepted "+invalid);}catch(IllegalArgumentException expected){}
         }
     }

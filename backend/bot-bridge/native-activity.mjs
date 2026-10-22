@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { dropAnswered, lastRunFromStatus, needsYouFromStatus } from './needs-you.mjs';
 
 const METHODS = new Set(['ListGrokBotAgents','ListGrokBotAgentStatuses','ListGrokBotTranscriptEntries']);
 const short = (value, max=4000) => typeof value === 'string' ? value.slice(0,max) : '';
@@ -62,7 +63,9 @@ export class NativeActivity {
       this.read('ListGrokBotAgentStatuses',{agentIds:[id]}),
     ]);
     if(!Array.isArray(page.entries))throw new Error('activity_schema_changed');
-    const status=(state.statuses ?? []).find(item=>item.agentId===id);
-    return {bot:name,source:'native',synced_at:this.clock(),working:status?status.isRunning===true:null,entries:normalizeEntries(page.entries,name,this.roster)};
+    const status=(state.statuses ?? []).find(item=>item.agentId===id) ?? null;
+    const entries=normalizeEntries(page.entries,name,this.roster);
+    return {bot:name,source:'native',synced_at:this.clock(),working:status?status.isRunning===true:null,
+      needs_you:dropAnswered(needsYouFromStatus(status,this.clock()),entries,this.clock()),last_run:lastRunFromStatus(status),entries};
   }
 }

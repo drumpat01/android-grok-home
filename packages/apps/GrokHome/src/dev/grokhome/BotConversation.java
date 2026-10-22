@@ -5,7 +5,6 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.speech.*;
 import android.speech.tts.*;
 import java.util.*;
 import okhttp3.*;
@@ -20,6 +19,10 @@ final class BotConversation {
         default boolean command(String spoken){return false;}
         default void routed(String bot,String request){}
         default void task(String phase,String detail){}
+        default void taskStart(long epochMillis){}
+        default void armed(){}
+        default void wake(String remainder){}
+        default void heard(String spoken){}
     }
     interface Roster { void result(JSONArray bots,String error); }
     private final Context context;
@@ -27,12 +30,35 @@ final class BotConversation {
     private final Handler main=new Handler(Looper.getMainLooper());
     private final OkHttpClient http=new OkHttpClient.Builder().callTimeout(15,java.util.concurrent.TimeUnit.SECONDS).build();
     private TextToSpeech tts;
-    private boolean speechReady,listening,closed,textChat,foreground=true;
-    interface RecognizerFactory {SpeechRecognizer create(Context context);}
-    private RecognizerFactory recognizerFactory=BotConversation::defaultRecognizer;
-    private SpeechRecognizer recognizer;
-    private static SpeechRecognizer defaultRecognizer(Context context){return android.os.Build.VERSION.SDK_INT>=31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(context)?SpeechRecognizer.createOnDeviceSpeechRecognizer(context):SpeechRecognizer.createSpeechRecognizer(context);}
-    void setRecognizerFactory(RecognizerFactory factory){stopAudio();recognizerFactory=factory;}
+    private boolean speechReady,listening,holdMic,wakeArmed,closed,textChat,foreground=true;
+    private int listenTicket;
+    private final SpeechEngine engine;
+    private SpeechEngine.Callback engineCallback(int ticket){
+        return new SpeechEngine.Callback(){
+            public void armed(){main.post(()->{if(ticket==listenTicket && wakeArmed && !closed)listener.armed();});}
+            public void wake(){main.post(()->{
+                if(ticket!=listenTicket || !wakeArmed || closed || !foreground)return;
+                wakeArmed=false;listenTicket++;listener.wake("");
+            });}
+            public void listening(){main.post(()->{if(ticket==listenTicket && holdMic && !closed){listening=true;listener.state("Listening","Speak to "+name);}});}
+            public void partial(String text){main.post(()->{if(ticket==listenTicket && holdMic && !closed)listener.state("Listening",text);});}
+            public void result(String text){main.post(()->{
+                if(ticket!=listenTicket || !holdMic || closed)return;
+                listening=false;holdMic=false;listenTicket++;
+                listener.state("One moment","Heard \""+text+"\"");recognized(text);
+            });}
+            public void silence(){main.post(()->{
+                if(ticket!=listenTicket || closed)return;
+                listening=false;holdMic=false;listenTicket++;
+                listener.state("Ready when you are","Talk to "+name);
+            });}
+            public void failed(String title,String detail){main.post(()->{
+                if(ticket!=listenTicket || closed)return;
+                listening=false;holdMic=false;wakeArmed=false;listenTicket++;
+                listener.state(title,detail);
+            });}
+        };
+    }
     private String server,name,job,utterance,lastSpoken="";
     private int generation,receivedChars,speechPart;
     private String silentJob="";
@@ -40,10 +66,10 @@ final class BotConversation {
     private Call poll;
 
     BotConversation(Context context,Listener listener){
-        this.context=context;this.listener=listener;
+        this.context=context;this.listener=listener;engine=new SpeechEngine(context);SpeechEngine.preload(context);
         tts=new TextToSpeech(context,status->{if(closed)return;speechReady=status==TextToSpeech.SUCCESS;if(speechReady && tts!=null){speechReady=tts.setLanguage(Locale.US)>=0;applyVoice(savedVoice());}});
         tts.setOnUtteranceProgressListener(new UtteranceProgressListener(){
-            public void onStart(String id){main.post(()->{if(!closed && foreground && utterance!=null && id.startsWith(utterance+":")){android.util.Log.i("GrokHomeBots","Speech playback started");listener.speaking(true);listener.state(name+" is speaking","Tap the sphere to stop speech");}});}
+            public void onStart(String id){main.post(()->{if(!closed && foreground && utterance!=null && id.startsWith(utterance+":")){android.util.Log.i("GrokHomeBots","Speech playback started");listener.speaking(true);listener.state(name+" is speaking",BotTalkBack.speakingDetail(name));}});}
             public void onDone(String id){main.post(()->{
                 if(closed || !foreground || utterance==null || !id.startsWith(utterance+":"))return;
                 listener.speaking(false);
@@ -59,6 +85,8 @@ final class BotConversation {
         silentJob=prefs.getString("bot_silent_job_"+name,"");
     }
     boolean listening(){return listening;}
+    boolean micHeld(){return holdMic;}
+    boolean wakeArmed(){return wakeArmed;}
     boolean busy(){return job!=null;}
     void setTextChat(boolean enabled){textChat=enabled;if(enabled)interruptSpeech();}
     boolean speechReady(){return speechReady;}
@@ -89,30 +117,31 @@ final class BotConversation {
     void finishVoicePreview(){stopAudio();if(speechReady)applyVoice(savedVoice());listener.state("Ready when you are","Talk to "+name);}
     void resume(){foreground=true;if(job!=null)pollJob(generation);}
     void pause(){foreground=false;generation++;if(poll!=null)poll.cancel();stopAudio();}
-    void stop(){generation++;job=null;if(poll!=null)poll.cancel();stopAudio();}
+    void stop(){generation++;job=null;if(poll!=null)poll.cancel();boolean wasSpeaking=utterance!=null;utterance=null;if(tts!=null)tts.stop();if(wasSpeaking)listener.speaking(false);}
+    private void haltRecognizer(){listening=false;engine.stop();}
     void stopAudio(){
-        listening=false;utterance=null;if(recognizer!=null){SpeechRecognizer previous=recognizer;recognizer=null;previous.destroy();}
+        holdMic=false;wakeArmed=false;listenTicket++;utterance=null;haltRecognizer();
         if(tts!=null)tts.stop();listener.speaking(false);
+    }
+    void stopWake(){
+        if(!wakeArmed)return;
+        wakeArmed=false;listenTicket++;haltRecognizer();
     }
     void close(){closed=true;pause();if(tts!=null)tts.shutdown();http.dispatcher().cancelAll();}
     void interruptSpeech(){if(job!=null){silentJob=job;context.getSharedPreferences("home",0).edit().putString("bot_silent_job_"+name,job).apply();}stopAudio();listener.state("Ready when you are","Talk to "+name);}
-    void listen(){
-        stopAudio();
-        if(!SpeechRecognizer.isRecognitionAvailable(context)){listener.state("Speech input unavailable","Use Keyboard, or enable an Android speech service");return;}
-        recognizer=recognizerFactory.create(context);
-        final SpeechRecognizer input=recognizer;
-        recognizer.setRecognitionListener(new RecognitionListener(){
-            public void onReadyForSpeech(Bundle b){if(recognizer!=input || !foreground)return;listening=true;listener.state("Listening","Speak to "+name);}
-            public void onBeginningOfSpeech(){}public void onRmsChanged(float f){}public void onBufferReceived(byte[] b){}
-            public void onEndOfSpeech(){if(recognizer!=input || !foreground)return;listening=false;listener.state("One moment","Recognizing your message");}
-            public void onError(int error){if(recognizer!=input || !foreground)return;listening=false;listener.state("Tap microphone to try again",error==SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS?"Allow microphone access":"You can also use Keyboard");}
-            public void onResults(Bundle b){if(recognizer!=input || !foreground)return;listening=false;ArrayList<String> values=b.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);if(values!=null && !values.isEmpty())recognized(values.get(0));}
-            public void onPartialResults(Bundle b){}public void onEvent(int type,Bundle b){}
-        });
-        Intent intent=new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM).putExtra(RecognizerIntent.EXTRA_LANGUAGE,"en-US").putExtra(RecognizerIntent.EXTRA_MAX_RESULTS,1);
-        try{recognizer.startListening(intent);}catch(RuntimeException error){listening=false;listener.state("Speech input unavailable","Use Keyboard, or check Android speech settings");}
+    void listenForWake(){
+        if(closed || !foreground || holdMic || wakeArmed || listening)return;
+        wakeArmed=true;
+        engine.start(SpeechEngine.Mode.WAKE,engineCallback(++listenTicket));
     }
-    void recognized(String spoken){if(!listener.command(spoken))sendVoice(spoken);}
+    /** One spoken command. The engine stops itself after a result or after silence. */
+    void listen(){
+        wakeArmed=false;holdMic=true;
+        if(tts!=null)tts.stop();utterance=null;listener.speaking(false);haltRecognizer();
+        listener.state("Listening","Speak to "+name);
+        engine.start(SpeechEngine.Mode.COMMAND,engineCallback(++listenTicket));
+    }
+    void recognized(String spoken){if(listener.command(spoken))return;if(job!=null){listener.state(name+" is working","Wait for this reply");return;}sendVoice(spoken);}
     void route(String request){if(job!=null){listener.state(name+" is busy","Try Who can help after this task finishes");return;}routeRequest=request;send(request,false,false);}
     void sendText(String message){send(message,false,false);}
     void sendVoice(String message){send(message,false,true);}
@@ -126,28 +155,34 @@ final class BotConversation {
         // or the recognizer (which stops listening before a voice reply arrives).
         job=id;receivedChars=0;silentJob=audioReply?"":id;
         context.getSharedPreferences("home",0).edit().putString("bot_job_"+name,id).putString("bot_read_job_"+name,id).putInt("bot_read_chars_"+name,0).putString("bot_silent_job_"+name,silentJob).apply();
-        context.getSharedPreferences("home",0).edit().putString("bot_route_"+name,routeRequest).putLong("bot_started_"+name,System.currentTimeMillis()).putString("bot_task_"+name,message==null?"Checking reply":message.substring(0,Math.min(160,message.length()))).apply();
+        context.getSharedPreferences("home",0).edit().putString("bot_route_"+name,routeRequest).putLong("bot_started_"+name,System.currentTimeMillis()).putString("bot_task_"+name,message==null?"Checking reply":message.substring(0,Math.min(160,message.length()))).remove("task_retired_"+name).apply();
         listener.task("working",routeRequest.isEmpty()?"Waiting for bot reply":"Finding the right bot");
         if(!check && routeRequest.isEmpty())listener.transcript("You",message);
         Request request=new Request.Builder().url(server+"/bot/jobs").post(RequestBody.create(data.toString(),MediaType.get("application/json"))).build();
         http.newCall(request).enqueue(new Callback(){
+            // F30 copy list, still owed here: "Your message may not have sent" and a Check reply button.
+            // Also the idle subtitle "Mic off for now" (Home still says "Microphone muted · tap to speak"). Deferred to the F30 copy PR.
             public void onFailure(Call call,java.io.IOException e){main.post(()->{if(ticket==generation && foreground){listener.task("error","Connection interrupted · check reply");listener.state("Connection interrupted","Choose Check reply from Bots; don't resend yet");}});}
-            public void onResponse(Call call,Response response){try(Response r=response){String body=r.body().string();JSONObject result=new JSONObject(body);main.post(()->{if(ticket!=generation || !foreground)return;if(!r.isSuccessful()){clearJob();listener.task("error","Bot unavailable");listener.state("Bot unavailable",result.optString("error","Check the computer bridge"));}else pollJob(ticket);});}catch(Exception e){onFailure(call,new java.io.IOException(e));}}
+            public void onResponse(Call call,Response response){try(Response r=response){String body=r.body().string();JSONObject result=new JSONObject(body);main.post(()->{if(ticket!=generation || !foreground)return;if(!r.isSuccessful()){clearJob();listener.task("error",ConnectionRules.OFFLINE_TITLE);listener.state(ConnectionRules.OFFLINE_TITLE,ConnectionRules.OFFLINE_ASLEEP);}else pollJob(ticket);});}catch(Exception e){onFailure(call,new java.io.IOException(e));}}
         });
     }
     void cancelTask(){
         final String target=name,expectedJob=job;final int ticket=generation;
         JSONObject data=new JSONObject();try{data.put("bot",target);if(expectedJob!=null)data.put("request_id",expectedJob);}catch(JSONException impossible){return;}
-        listener.task("working","Stopping task…");
+        listener.task("stopping","Stopping…");
         http.newCall(new Request.Builder().url(server+"/bot/cancel").post(RequestBody.create(data.toString(),MediaType.get("application/json"))).build()).enqueue(new Callback(){
-            public void onFailure(Call call,java.io.IOException error){main.post(()->{if(ticket==generation && foreground)listener.task("error","Couldn’t confirm stop · check reply");});}
+            public void onFailure(Call call,java.io.IOException error){main.post(()->{if(ticket==generation && foreground)listener.task("stop_failed","Couldn't stop the task");});}
             public void onResponse(Call call,Response response){try(Response r=response){boolean success=r.isSuccessful();main.post(()->{
                 if(ticket!=generation || !foreground || !target.equals(name))return;
-                if(!success){listener.task("error","Couldn’t stop task · try again");return;}
+                if(!success){listener.task("stop_failed","Couldn't stop the task");return;}
                 if(poll!=null)poll.cancel();generation++;clearJob();routeRequest="";stopAudio();
-                listener.task("cancelled","Task cancelled");listener.state("Task cancelled","Talk to "+name);
+                listener.task("stopped","Task stopped");listener.state("Task stopped","Talk to "+name);
             });}}
         });
+    }
+    /** Gateway started_at is unix seconds. Zero means the payload has no start. */
+    static long startedAtMillis(JSONObject data){
+        if(data==null)return 0;double seconds=data.optDouble("started_at",0);if(!(seconds>0))return 0;return (long)(seconds*1000);
     }
     private void clearJob(){job=null;routeRequest="";context.getSharedPreferences("home",0).edit().remove("bot_job_"+name).remove("bot_route_"+name).apply();}
     void checkReply(){if(job!=null){pollJob(generation);return;}send(null,true,false);}
@@ -173,10 +208,11 @@ final class BotConversation {
                         else listener.state("Reply received",textChat?"Read "+name+"'s reply in chat":"Open Keyboard to read "+name+"'s reply");
                     }
                 }
-                if(status.equals("running") || status.equals("cancelling")){listener.task("working",data.optString("progress","Waiting for bot reply"));if(utterance==null)listener.state(name+" is working","Waiting for your bot");main.postDelayed(()->pollJob(ticket),250);return;}
+                long started=startedAtMillis(data);if(started>0)listener.taskStart(started);
+                if(status.equals("running") || status.equals("cancelling")){listener.task(status.equals("cancelling")?"stopping":"working",data.optString("progress","Waiting for bot reply"));if(utterance==null && !status.equals("cancelling"))listener.state(name+" is working","Waiting for your bot");main.postDelayed(()->pollJob(ticket),250);return;}
                 String routedRequest=routeRequest;routeRequest="";
                 clearJob();
-                listener.task(status.equals("finished")?"complete":status.equals("cancelled")?"cancelled":"error",status.equals("finished")?"Task complete":status.equals("cancelled")?"Task cancelled":"Check reply");
+                listener.task(status.equals("finished")?"finished":status.equals("cancelled")?"stopped":"error",status.equals("finished")?"Task complete":status.equals("cancelled")?"Task stopped":"Check reply");
                 if(!routedRequest.isEmpty()){
                     String target=data.optString("route_bot");
                     if(status.equals("finished") && BotIdentity.index(target)>=0)listener.routed(target,routedRequest);
@@ -185,7 +221,7 @@ final class BotConversation {
                 }
                 lastSpoken=completed;context.getSharedPreferences("home",0).edit().putString("bot_spoken_"+name,completed).apply();
                 if(completed.equals(utterance))finishSpeech(completed);
-                else listener.state(status.equals("cancelled")?"Task cancelled":status.equals("error")?"Check reply":"Ready when you are",status.equals("error")?"Your bot may still be working; choose Check reply":"Talk to "+name);
+                else listener.state(status.equals("cancelled")?"Task stopped":status.equals("error")?"Check reply":"Ready when you are",status.equals("error")?"Your bot may still be working; choose Check reply":"Talk to "+name);
 
             });}catch(Exception e){onFailure(call,new java.io.IOException(e));}}
         });
@@ -215,7 +251,7 @@ final class BotConversation {
     }
     void roster(String base,Roster receiver){
         http.newCall(new Request.Builder().url(base+"/bots").build()).enqueue(new Callback(){
-            public void onFailure(Call call,java.io.IOException e){main.post(()->{if(!closed)receiver.result(null,"Start Grok Home Voice on your computer");});}
+            public void onFailure(Call call,java.io.IOException e){main.post(()->{if(!closed)receiver.result(null,"Grok Home Voice isn't running on your computer");});}
             public void onResponse(Call call,Response response){try(Response r=response){JSONArray bots=new JSONObject(r.body().string()).getJSONArray("bots");main.post(()->{if(!closed)receiver.result(bots,null);});}catch(Exception e){onFailure(call,new java.io.IOException(e));}}
         });
     }

@@ -5,9 +5,12 @@ from pathlib import Path
 import tempfile
 import threading
 import unittest
+import uuid
 from unittest.mock import patch
 import urllib.error
 import urllib.request
+from activity_gateway import ActivityGateway
+from answer_gateway import AnswerGateway
 import server
 
 
@@ -62,9 +65,11 @@ class BrokerTests(unittest.TestCase):
 
     def test_compact_activity_summary_uses_same_roster_and_browser_boundaries(self):
         from activity_gateway import ActivityGateway
-        self.server.activity_gateway=ActivityGateway(lambda:[{'name':'Nova'}],lambda name:{'bot':name,'entries':[{'id':'r','kind':'message','role':'Nova','text':'PRIVATE','time':3}],'working':False})
+        body='4.5.2 in review '+('x'*80)+' PRIVATE-TAIL'
+        self.server.activity_gateway=ActivityGateway(lambda:[{'name':'Nova'}],lambda name:{'bot':name,'entries':[{'id':'r','kind':'message','role':'Nova','text':body,'time':3}],'working':False})
         status,data,_=self.request('/bot/activity?bot=Nova&summary=1',method='GET')
-        self.assertEqual(status,200);self.assertEqual(data['reply_id'],'r');self.assertNotIn('entries',data);self.assertNotIn('PRIVATE',str(data))
+        self.assertEqual(status,200);self.assertEqual(data['reply_id'],'r');self.assertNotIn('entries',data);self.assertNotIn(body,str(data));self.assertNotIn('PRIVATE-TAIL',str(data))
+        self.assertLessEqual(len(data['latestUnreadPreview']),60);self.assertTrue(data['latestUnreadPreview'].startswith('4.5.2 in review'))
         self.assertEqual(self.request('/bot/activity?bot=Typo&summary=1',method='GET')[0],400)
         self.assertEqual(self.request('/bot/activity?bot=Nova&summary=1',headers={'Origin':'https://example.com'},method='GET')[0],403)
 
@@ -112,7 +117,38 @@ class BrokerTests(unittest.TestCase):
 
     def test_health_never_returns_key(self):
         status, data, _ = self.request('/health',method='GET')
-        self.assertEqual((status,data), (200,{'service':'grok-home-voice','key_configured':True,'xai_enabled':True,'bots_enabled':False,'activity_enabled':False,'updates_enabled':True,'team_stage_enabled':False}))
+        self.assertEqual(status, 200)
+        started = data.pop('started_at')
+        self.assertIsInstance(started, int)
+        self.assertGreater(started, 1_700_000_000)
+        self.assertEqual(data, {'service':'grok-home-voice','key_configured':True,'xai_enabled':True,'bots_enabled':False,'activity_enabled':False,'updates_enabled':True,'team_stage_enabled':False,'raise_hand_enabled':False,'version':server.service_version()})
+        self.assertNotIn('TEST_ONLY_NOT_A_REAL_KEY', json.dumps(data))
+        again = self.request('/health', method='GET')[1]['started_at']
+        self.assertEqual(started, again)
+
+    def test_raise_hand_answer_route_does_not_approve_and_is_idempotent(self):
+        calls=[]
+        def read(name):
+            return {'bot':name,'working':True,'entries':[{'kind':'message','role':name,'id':'r','text':'Merge it?','time':4}],
+                    'needs_you':[{'id':'handoff:req-1','kind':'approval','question':'Merge the Tesla page fix?','context':'','options':[],'created':1,'expires':None,'answerable_here':False}]}
+        self.server.activity_gateway=ActivityGateway(lambda:[{'name':'Nova'}],read)
+        self.server.answer_gateway=AnswerGateway(self.server.activity_gateway,lambda *args:calls.append(args))
+        body=json.dumps({'bot':'Nova','needs_you_id':'handoff:req-1','option_id':'approve','idempotency_key':str(uuid.uuid4())}).encode()
+        status,data,_=self.request('/bot/answer',body=body)
+        again=self.request('/bot/answer',body=body)
+        self.assertEqual(status,200)
+        self.assertEqual(data,{'delivery':'failed:not_answerable_here','message':'Approve this in the Grok Bot app.'})
+        self.assertEqual(again[1],data)
+        self.assertEqual(calls,[])
+        self.assertEqual(self.request('/bot/answer',body=b'{"bot":"Nova"}')[0],400)
+        self.assertEqual(self.request('/bot/answer',body=body,headers={'Origin':'https://example.com','Content-Type':'application/json'})[0],403)
+        health=self.request('/health',method='GET')[1]
+        self.assertTrue(health['raise_hand_enabled'])
+        summary=self.request('/bot/activity?bot=Nova&summary=1',method='GET')[1]
+        self.assertEqual(summary['needs_you'][0]['question_short'],'Merge the Tesla page fix?')
+        self.assertFalse(summary['needs_you'][0]['question_short_truncated'])
+        self.assertEqual(summary['latestUnreadPreview'],'Merge it?')
+        self.assertNotIn('Merge it?',summary['needs_you'][0]['question'])
 
     def test_disabled_xai_never_reads_key_or_mints_token(self):
         self.server.xai_enabled = False
@@ -140,11 +176,11 @@ class BrokerTests(unittest.TestCase):
     def test_lan_host_and_client_are_limited_to_configured_subnet(self):
         self.server.lan=ipaddress.ip_network('192.168.1.0/24')
         with patch('server.mint_token',return_value={'value':'TEST_EPHEMERAL','expires_at':123}):
-            self.assertEqual(self.request(headers={'Host':'192.168.1.10:8788','Content-Type':'application/json'})[0],200)
+            self.assertEqual(self.request(headers={'Host':'192.168.1.20:8787','Content-Type':'application/json'})[0],200)
         handler=object.__new__(server.Handler)
-        handler.server=self.server;handler.headers={'Host':'192.168.1.10:8788'}
-        handler.client_address=('192.168.1.20',1234);self.assertTrue(handler.local_request())
-        handler.client_address=('192.168.2.20',1234);self.assertFalse(handler.local_request())
+        handler.server=self.server;handler.headers={'Host':'192.168.1.20:8787'}
+        handler.client_address=('192.168.1.42',1234);self.assertTrue(handler.local_request())
+        handler.client_address=('192.168.2.42',1234);self.assertFalse(handler.local_request())
         handler.client_address=('8.8.8.8',1234);self.assertFalse(handler.local_request())
 
     def test_lan_cannot_be_public_or_unspecified(self):

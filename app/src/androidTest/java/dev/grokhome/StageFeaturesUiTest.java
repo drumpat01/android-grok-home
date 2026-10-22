@@ -27,6 +27,7 @@ public class StageFeaturesUiTest {
     private ActivityScenario<HomeActivity> scenario;private final AtomicInteger posts=new AtomicInteger(),kitVersion=new AtomicInteger(1),maxVersion=new AtomicInteger(1);
     private static Object field(Object owner,String name)throws Exception{Field f=owner.getClass().getDeclaredField(name);f.setAccessible(true);return f.get(owner);}
     private static void invoke(Object owner,String name)throws Exception{Method m=owner.getClass().getDeclaredMethod(name);m.setAccessible(true);m.invoke(owner);}
+    private static void enterAmbient(Object owner)throws Exception{Method m=owner.getClass().getDeclaredMethod("enterAmbient",boolean.class);m.setAccessible(true);m.invoke(owner,true);}
     private static View control(View view,String description){if(description.contentEquals(view.getContentDescription()==null?"":view.getContentDescription()))return view;if(view instanceof ViewGroup)for(int i=0;i<((ViewGroup)view).getChildCount();i++){View found=control(((ViewGroup)view).getChildAt(i),description);if(found!=null)return found;}return null;}
     private JSONObject snapshot(String name)throws Exception{
         JSONArray rows=new JSONArray();int count=name.equals("Max")?80:4;
@@ -51,13 +52,12 @@ public class StageFeaturesUiTest {
             }
             String name=request.getRequestUrl().queryParameter("bot");if(name==null)return new MockResponse().setResponseCode(404);
             JSONObject data=snapshot(name);
-            if("1".equals(request.getRequestUrl().queryParameter("summary"))){JSONObject row=BotActivityState.latestReply(data.getJSONArray("entries"),name);data=new JSONObject().put("bot",name).put("stale",false).put("working",data.optBoolean("working")).put("reply_id",row.optString("id")).put("reply_revision",row.optString("updatedSeq")).put("reply_seq",row.optString("seq")).put("reply_time",row.optLong("time"));}
+            if("1".equals(request.getRequestUrl().queryParameter("summary"))){JSONObject row=BotActivityState.latestReply(data.getJSONArray("entries"),name);data=new JSONObject().put("bot",name).put("stale",false).put("working",data.optBoolean("working")).put("reply_id",row.optString("id")).put("reply_revision",row.optString("updatedSeq")).put("reply_seq",row.optString("seq")).put("reply_time",row.optLong("time")).put("latestUnreadPreview",UnreadPreview.preview(row.optString("text")));}
             return new MockResponse().setBody(data.toString());
         }catch(Exception e){return new MockResponse().setResponseCode(500);}}});server.start();
         SharedPreferences.Editor edit=prefs.edit().putString("voice_server",server.url("/").toString().replaceAll("/$","")).putString("selected_bot","Max").putBoolean("chat_open",false).putBoolean("stage_overview",true).putInt("stage_size",100).putInt("stage_light",100).putInt("stage_motion",100).putBoolean("ambient_enabled",true).putBoolean("auto_listen",false).putBoolean("muted",false);
         for(String key:new HashSet<>(prefs.getAll().keySet()))if(key.startsWith("activity_") || key.startsWith("chat_place_") || key.startsWith("bot_job_"))edit.remove(key);edit.commit();
         scenario=ActivityScenario.launch(HomeActivity.class);
-        scenario.onActivity(home->{try{((BotConversation)field(home,"conversation")).setRecognizerFactory(ctx->android.speech.SpeechRecognizer.createSpeechRecognizer(ctx,new ComponentName(InstrumentationRegistry.getInstrumentation().getContext(),FakeRecognitionService.class)));}catch(Exception e){throw new AssertionError(e);}});
     }
     @After public void cleanup()throws Exception{
         if(scenario!=null)scenario.close();
@@ -68,10 +68,12 @@ public class StageFeaturesUiTest {
     @Test public void floorSpotlightIsStationaryWhileBotBobs()throws Exception{
         scenario.onActivity(home->{try{
             BotView view=(BotView)field(home,"bot");view.setActive(false);view.restoreOverview(false);view.layout(0,0,1000,800);
+            java.lang.reflect.Field shift=view.getClass().getDeclaredField("statusShift");shift.setAccessible(true);shift.setFloat(view,1f);
+            java.lang.reflect.Field ceiling=view.getClass().getDeclaredField("statusCeiling");ceiling.setAccessible(true);ceiling.setFloat(view,0f);
             Object motion=field(view,"motion");Field y=motion.getClass().getDeclaredField("y");y.setAccessible(true);
             Bitmap first=Bitmap.createBitmap(1000,800,Bitmap.Config.ARGB_8888),second=Bitmap.createBitmap(1000,800,Bitmap.Config.ARGB_8888);
             y.setDouble(motion,-.12);view.draw(new android.graphics.Canvas(first));y.setDouble(motion,.12);view.draw(new android.graphics.Canvas(second));
-            Method stage=view.getClass().getDeclaredMethod("stageY");stage.setAccessible(true);float floor=(Float)stage.invoke(view);float radius=Math.min(1000*.157f,800*.31f);
+            float floor=800*StagePlacement.SINGLE_Y,radius=Math.min(1000*.157f,800*.31f)*StagePlacement.SINGLE_SCALE;
             int lit=0;for(int py=(int)(floor+radius*1.30f);py<Math.min(800,(int)(floor+radius*1.6f));py++)for(int px=200;px<800;px++){
                 int a=first.getPixel(px,py),b=second.getPixel(px,py);assertEquals("Floor pixel moved at "+px+","+py,a,b);if((a&0xffffff)!=0)lit++;
             }
@@ -80,7 +82,7 @@ public class StageFeaturesUiTest {
     }
     @Test public void ambientVoiceWakeStartsRecognitionAndDoesNotSendWakePhrase()throws Exception{
         Thread.sleep(1000);
-        scenario.onActivity(home->{try{invoke(home,"enterAmbient");assertTrue(diagnostic(home),(Boolean)field(home,"ambient"));}catch(Exception e){throw new AssertionError(e);}});
+        scenario.onActivity(home->{try{enterAmbient(home);assertTrue(diagnostic(home),(Boolean)field(home,"ambient"));}catch(Exception e){throw new AssertionError(e);}});
         Thread.sleep(1700);
         scenario.onActivity(home->{try{BotConversation conversation=(BotConversation)field(home,"conversation");assertTrue(diagnostic(home),conversation.listening());assertEquals("Speak to Max",field(home,"voiceDetail"));conversation.recognized("Hey Max");assertFalse((Boolean)field(home,"ambient"));}catch(Exception e){throw new AssertionError(e);}});
         Thread.sleep(900);
@@ -92,9 +94,9 @@ public class StageFeaturesUiTest {
         scenario.onActivity(home->{try{invoke(home,"showKeyboard");((BotConversation)field(home,"conversation")).recognized("Let me talk to Nova about this");}catch(Exception e){throw new AssertionError(e);}});
         Thread.sleep(1800);
         assertEquals(1,submitted.size());JSONObject request=submitted.get(0);assertEquals("Nova",request.getString("bot"));assertTrue(request.getString("message").contains("handoff from Max"));assertTrue(request.getString("message").contains("Saved conversation 79"));assertTrue(request.getString("message").length()<=4000);
-        scenario.onActivity(home->{try{assertNotNull(field(home,"chatPanel"));assertEquals(View.VISIBLE,((View)field(home,"taskCard")).getVisibility());assertTrue(((TextView)field(home,"taskLabel")).getText().toString().contains("Working"));((BotConversation)field(home,"conversation")).cancelTask();}catch(Exception e){throw new AssertionError(e);}});
+        scenario.onActivity(home->{try{assertNotNull(field(home,"chatPanel"));StatusBlock block=(StatusBlock)field(home,"statusBlock");assertTrue(block.titleText().contains("working"));((BotConversation)field(home,"conversation")).cancelTask();}catch(Exception e){throw new AssertionError(e);}});
         Thread.sleep(800);assertTrue(cancelledTask);
-        scenario.onActivity(home->{try{assertFalse(((BotConversation)field(home,"conversation")).busy());assertTrue(((TextView)field(home,"taskLabel")).getText().toString().contains("Cancelled"));}catch(Exception e){throw new AssertionError(e);}});
+        scenario.onActivity(home->{try{assertFalse(((BotConversation)field(home,"conversation")).busy());assertTrue(((StatusBlock)field(home,"statusBlock")).titleText().contains("Task stopped"));}catch(Exception e){throw new AssertionError(e);}});
         capture("task-cancelled");
     }
     @Test public void whoCanHelpSelectsRecommendedBotAndDeliversRequest()throws Exception{
@@ -102,15 +104,15 @@ public class StageFeaturesUiTest {
         scenario.onActivity(home->{try{((BotConversation)field(home,"conversation")).recognized("Who can help?");assertTrue((Boolean)field(home,"awaitingRoute"));((BotConversation)field(home,"conversation")).recognized("Please review my website");}catch(Exception e){throw new AssertionError(e);}});
         Thread.sleep(2000);assertEquals(2,submitted.size());assertEquals("route",submitted.get(0).getString("action"));assertEquals("Max",submitted.get(0).getString("bot"));assertEquals("Nova",submitted.get(1).getString("bot"));assertEquals("Please review my website",submitted.get(1).getString("message"));
         finishTask=true;Thread.sleep(800);
-        scenario.onActivity(home->{try{assertEquals("Nova",field(home,"selectedBot"));assertFalse(((BotConversation)field(home,"conversation")).busy());assertTrue(((TextView)field(home,"taskLabel")).getText().toString().contains("Complete"));}catch(Exception e){throw new AssertionError(e);}});
+        scenario.onActivity(home->{try{assertEquals("Nova",field(home,"selectedBot"));assertFalse(((BotConversation)field(home,"conversation")).busy());assertTrue(((StatusBlock)field(home,"statusBlock")).titleText().contains("finished"));}catch(Exception e){throw new AssertionError(e);}});
         capture("task-complete");
     }
     @Test public void ambientKeepsChatAndWakesMaxOnTouchOrSpeech()throws Exception{
         Thread.sleep(1000);prefs.edit().putBoolean("muted",true).commit();
         scenario.onActivity(home->{try{invoke(home,"showKeyboard");TextChatPanel panel=(TextChatPanel)field(home,"chatPanel");panel.hideKeyboard();((BotView)field(home,"bot")).centerBot("Echo");}catch(Exception e){throw new AssertionError(e);}});Thread.sleep(800);
-        scenario.onActivity(home->{try{invoke(home,"enterAmbient");assertTrue(diagnostic(home),(Boolean)field(home,"ambient"));assertEquals("Max",field(home,"selectedBot"));assertTrue(((BotView)field(home,"bot")).isOverview());assertEquals(View.INVISIBLE,((View)field(home,"chatLayer")).getVisibility());assertEquals(View.INVISIBLE,((View)field(home,"homeControls")).getVisibility());}catch(Exception e){throw new AssertionError(e);}});
+        scenario.onActivity(home->{try{enterAmbient(home);assertTrue(diagnostic(home),(Boolean)field(home,"ambient"));assertEquals("Max",field(home,"selectedBot"));assertTrue(((BotView)field(home,"bot")).isOverview());assertEquals(View.INVISIBLE,((View)field(home,"chatLayer")).getVisibility());assertEquals(View.INVISIBLE,((View)field(home,"homeControls")).getVisibility());}catch(Exception e){throw new AssertionError(e);}});
         Thread.sleep(700);scenario.onActivity(home->{try{assertEquals(((View)field(home,"root")).getWidth(),((BotView)field(home,"bot")).getWidth());}catch(Exception e){throw new AssertionError(e);}});capture("ambient-lineup");
-        scenario.onActivity(home->{try{tap(home,400,300);assertFalse((Boolean)field(home,"ambient"));assertEquals("Max",field(home,"selectedBot"));assertNotNull(field(home,"chatPanel"));assertEquals(View.VISIBLE,((View)field(home,"chatLayer")).getVisibility());invoke(home,"enterAmbient");((BotConversation)field(home,"conversation")).recognized("Show Nova");assertFalse((Boolean)field(home,"ambient"));}catch(Exception e){throw new AssertionError(e);}});
+        scenario.onActivity(home->{try{tap(home,400,300);assertFalse((Boolean)field(home,"ambient"));assertEquals("Max",field(home,"selectedBot"));assertNotNull(field(home,"chatPanel"));assertEquals(View.VISIBLE,((View)field(home,"chatLayer")).getVisibility());enterAmbient(home);((BotConversation)field(home,"conversation")).recognized("Show Nova");assertFalse((Boolean)field(home,"ambient"));}catch(Exception e){throw new AssertionError(e);}});
         Thread.sleep(700);scenario.onActivity(home->{try{assertEquals("Nova",field(home,"selectedBot"));assertNotNull(field(home,"chatPanel"));}catch(Exception e){throw new AssertionError(e);}});assertEquals(0,posts.get());
     }
     private static void capture(String name)throws Exception{Bitmap image=InstrumentationRegistry.getInstrumentation().getUiAutomation().takeScreenshot();File folder=InstrumentationRegistry.getInstrumentation().getTargetContext().getExternalFilesDir("stage-features-tests");folder.mkdirs();try(FileOutputStream out=new FileOutputStream(new File(folder,name+".png"))){image.compress(Bitmap.CompressFormat.PNG,100,out);}image.recycle();}

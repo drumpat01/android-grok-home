@@ -2,7 +2,7 @@ import threading
 import time
 import unittest
 import uuid
-from bot_gateway import BotGateway
+from bot_gateway import BotGateway, BRIEF_HINT
 
 
 class BotGatewayTests(unittest.TestCase):
@@ -57,6 +57,17 @@ class BotGatewayTests(unittest.TestCase):
             self.assertEqual(result['status'],expected);self.assertEqual(calls[0][0],'ask');self.assertIn('Do not perform the task',calls[0][2]);self.assertEqual(len(calls),1)
             if expected=='finished':self.assertEqual(result['route_bot'],'Nova')
 
+    def test_route_survives_repeated_full_reply(self):
+        def call(action, name, message):
+            return {'status': 'running' if action == 'ask' else 'finished', 'reply': 'ROUTE: Sage'}
+        gateway = BotGateway(lambda: [{'name': 'Max'}, {'name': 'Sage'}, {'name': 'Nova'}], call)
+        data = {'request_id': str(uuid.uuid4()), 'bot': 'Max', 'action': 'route', 'message': 'with my website'}
+        gateway.start(data)
+        result = self.wait(gateway, data['request_id'])
+        self.assertEqual(result['status'], 'finished')
+        self.assertEqual(result['route_bot'], 'Sage')
+        self.assertEqual(result['reply'], 'ROUTE: Sage')
+
     def wait(self, gateway, request_id):
         for _ in range(100):
             job = gateway.get(request_id)
@@ -69,14 +80,14 @@ class BotGatewayTests(unittest.TestCase):
         calls = []
         def call(action, name, message):
             calls.append((action, name, message))
-            return {'status': 'finished', 'reply': 'Hello there', 'earlierReplies': ['Private older reply']}
+            return {'status': 'finished', 'reply': 'Hello the owner', 'earlierReplies': ['Private older reply']}
         gateway = BotGateway(lambda: [{'name': 'Max'}], call)
         data = {'request_id': str(uuid.uuid4()), 'bot': 'Max', 'message': 'Hello'}
         gateway.start(data)
         result = self.wait(gateway, data['request_id'])
         gateway.start(data)
-        self.assertEqual(calls, [('ask', 'Max', 'Hello')])
-        self.assertEqual(result['reply'], 'Hello there')
+        self.assertEqual(calls, [('ask', 'Max', 'Hello' + BRIEF_HINT)])
+        self.assertEqual(result['reply'], 'Hello the owner')
         self.assertNotIn('earlierReplies', result)
         self.assertNotIn('_message', result)
 

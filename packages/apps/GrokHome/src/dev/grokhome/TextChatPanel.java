@@ -47,11 +47,12 @@ final class TextChatPanel extends LinearLayout {
     private JSONObject savedViewport;
     private String latestReplyToken="";
     private int dp(float value){return Math.round(value*getResources().getDisplayMetrics().density);}
-    private GradientDrawable surface(int color,int radius){GradientDrawable shape=new GradientDrawable();shape.setColor(color);shape.setCornerRadius(dp(radius));shape.setStroke(dp(1),0xff34383e);return shape;}
+    private GradientDrawable surface(int color,int radius){return surface(color,radius,false);}
+    private GradientDrawable surface(int color,int radius,boolean interactive){GradientDrawable shape=new GradientDrawable();shape.setColor(color);shape.setCornerRadius(dp(radius));shape.setStroke(dp(1),interactive?getContext().getColor(R.color.border_interactive):0xff34383e);return shape;}
     private TextView label(String value,int size,int color){TextView view=new TextView(getContext());view.setText(value);view.setTextSize(size);view.setTextColor(color);return view;}
     private Button action(String title,Runnable run){
         Button b=new Button(getContext());b.setText(title);b.setAllCaps(false);b.setTextSize(15);b.setTextColor(Color.WHITE);b.setPadding(dp(16),0,dp(16),0);b.setMinWidth(0);b.setMinHeight(dp(48));
-        b.setBackground(new RippleDrawable(android.content.res.ColorStateList.valueOf(0x30ffffff),surface(0xff17191c,28),null));b.setOnClickListener(v->run.run());return b;
+        b.setBackground(new RippleDrawable(android.content.res.ColorStateList.valueOf(0x30ffffff),surface(0xff17191c,28,true),null));b.setOnClickListener(v->run.run());return b;
     }
     TextChatPanel(Context context,String name,int color,String draft,Actions actions){
         super(context);this.name=name;this.actions=actions;setOrientation(VERTICAL);setPadding(dp(16),dp(12),dp(16),dp(16));setBackground(surface(0xff191c20,20));setOnClickListener(v->{});setElevation(dp(12));
@@ -59,8 +60,10 @@ final class TextChatPanel extends LinearLayout {
         ImageView avatar=new ImageView(context);avatar.setImageDrawable(SolidAvatar.icon(BotIdentity.shape(name),color));header.addView(avatar,new LayoutParams(dp(36),dp(36)));
         LinearLayout heading=new LinearLayout(context);heading.setOrientation(VERTICAL);heading.setPadding(dp(12),0,dp(8),0);
         heading.addView(label(name+" · Chat",20,Color.WHITE));status=label("Ready when you are",12,0xffa7adb6);heading.addView(status);header.addView(heading,new LayoutParams(0,-2,1));
-        ImageButton microphone=new ImageButton(context);microphone.setImageResource(R.drawable.ic_mic);microphone.setContentDescription("Voice navigation");microphone.setBackground(surface(0xff17191c,28));microphone.setPadding(dp(10),dp(10),dp(10),dp(10));microphone.setOnClickListener(v->actions.voice());header.addView(microphone,new LayoutParams(dp(44),dp(44)));
-        header.addView(action("Close",actions::close),new LayoutParams(-2,dp(48)));addView(header,new LayoutParams(-1,dp(56)));
+        ImageButton microphone=new ImageButton(context);microphone.setImageResource(R.drawable.ic_mic);microphone.setContentDescription("Voice navigation");microphone.setBackground(surface(0xff17191c,28,true));microphone.setPadding(dp(10),dp(10),dp(10),dp(10));microphone.setOnClickListener(v->actions.voice());
+        header.addView(microphone,new LayoutParams(dp(48),dp(48)));
+        LayoutParams closeParams=new LayoutParams(-2,dp(48));closeParams.leftMargin=dp(8);
+        header.addView(action("Close",actions::close),closeParams);addView(header,new LayoutParams(-1,dp(56)));
         syncStatus=label("Syncing activity…",11,0xffa7adb6);syncStatus.setPadding(dp(4),0,0,dp(4));addView(syncStatus,new LayoutParams(-1,-2));
         scroll=new ListView(context);scroll.setItemsCanFocus(true);scroll.setDivider(null);scroll.setDividerHeight(0);scroll.setClipToPadding(false);scroll.setPadding(0,dp(12),0,dp(12));
         scroll.setAdapter(adapter);addView(scroll,new LayoutParams(-1,0,1));
@@ -77,7 +80,7 @@ final class TextChatPanel extends LinearLayout {
         View divider=new View(context);divider.setBackgroundColor(0xff34383e);addView(divider,new LayoutParams(-1,dp(1)));
         LinearLayout composer=new LinearLayout(context);composer.setGravity(Gravity.BOTTOM);composer.setPadding(0,dp(12),0,0);
         input=new EditText(context);input.setHint("Message "+name);input.setContentDescription("Message "+name);input.setTextColor(Color.WHITE);input.setHintTextColor(0xffa7adb6);input.setTextSize(16);
-        input.setMinLines(1);input.setMaxLines(4);input.setMinHeight(dp(52));input.setPadding(dp(16),dp(12),dp(16),dp(12));input.setGravity(Gravity.TOP|Gravity.START);input.setBackground(surface(0xff101214,18));
+        input.setMinLines(1);input.setMaxLines(4);input.setMinHeight(dp(52));input.setPadding(dp(16),dp(12),dp(16),dp(12));input.setGravity(Gravity.TOP|Gravity.START);input.setBackground(surface(0xff101214,18,true));
         input.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE|android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         input.setImeOptions(EditorInfo.IME_ACTION_SEND|EditorInfo.IME_FLAG_NO_EXTRACT_UI);input.setFilters(new InputFilter[]{new InputFilter.LengthFilter(4000)});input.setText(draft);input.setSelection(input.length());
         composer.addView(input,new LayoutParams(0,-2,1));send=action("Send",this::sendMessage);send.setContentDescription("Send message");LayoutParams sendParams=new LayoutParams(dp(82),dp(52));sendParams.leftMargin=dp(10);composer.addView(send,sendParams);addView(composer,new LayoutParams(-1,-2));
@@ -85,8 +88,8 @@ final class TextChatPanel extends LinearLayout {
         input.setOnEditorActionListener((v,id,event)->{if(id==EditorInfo.IME_ACTION_SEND){sendMessage();return true;}return false;});
         input.setOnKeyListener((v,key,event)->{if(key==KeyEvent.KEYCODE_ENTER && !event.isShiftPressed()){if(event.getAction()==KeyEvent.ACTION_DOWN)sendMessage();return true;}return false;});updateSend();
     }
-    private void updateSend(){boolean enabled=!busy && !input.getText().toString().trim().isEmpty();send.setEnabled(enabled);send.setAlpha(enabled?1:.4f);}
-    private void sendMessage(){String value=input.getText().toString().trim();if(!busy && !value.isEmpty())actions.send(value);}
+    private void updateSend(){String value=input.getText().toString().trim();boolean enabled=!value.isEmpty() && (!busy || BotTrick.command(value)!=null);send.setEnabled(enabled);send.setAlpha(enabled?1:.4f);}
+    private void sendMessage(){String value=input.getText().toString().trim();if(value.isEmpty() || busy && BotTrick.command(value)==null)return;actions.send(value);}
     String botName(){return name;}
     JSONObject saveViewport(){
         if(savedViewport!=null)return savedViewport;
@@ -110,6 +113,7 @@ final class TextChatPanel extends LinearLayout {
         if(last!=null && last.getBottom()<=scroll.getHeight()-scroll.getPaddingBottom()+dp(8))actions.viewed(latestReplyToken);
     }
     void prepareResize(){pinAfterResize=followLatest;}
+    void discardDraft(){input.setText("");}
     void clearComposer(){input.setText("");firstHistory=true;followLatest=true;}
     private void scrollToLatest(){if(!rows.isEmpty())scroll.setSelection(rows.size()-1);}
     void setStatus(String title,boolean pending){
@@ -118,7 +122,7 @@ final class TextChatPanel extends LinearLayout {
     void setRemoteState(boolean working,boolean stale){remoteWorking=working;remoteStale=stale;syncStatus.setText(stale?"Activity sync unavailable · showing saved conversation":"Activity synced");refreshStatus();}
     private void refreshStatus(){
         busy=localBusy || remoteWorking;
-        boolean working=remoteWorking || localBusy && !currentTitle.equals("Connection interrupted") && !currentTitle.equals("Check reply") && !currentTitle.equals("Bot unavailable");
+        boolean working=remoteWorking || localBusy && !currentTitle.equals("Connection interrupted") && !currentTitle.equals("Check reply") && !currentTitle.equals("Bot unavailable") && !currentTitle.equals(ConnectionRules.OFFLINE_TITLE);
         status.setText(working?name+" is working…":currentTitle);
         activityLabel.setText(name+" is working…");activity.setVisibility(working?VISIBLE:GONE);
         updateSend();

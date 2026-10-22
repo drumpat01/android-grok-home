@@ -3,6 +3,7 @@ uniform float3 axisX;
 uniform float3 axisY;
 uniform float3 axisZ;
 uniform float pixelSize;
+uniform float depth;
 layout(color) uniform half4 baseColor;
 
 float3 surfaceAt(float2 p) {
@@ -17,8 +18,8 @@ float3 surfaceAt(float2 p) {
 float field(float3 p) {
     float d=surfaceAt(p.xy).x;
     // A round bevel and a gently domed face, with the exact supplied 2D outline.
-    float2 q=float2(max(d+0.62,0.0),p.z);
-    return length(q)-0.62;
+    float2 q=float2(max(d+depth,0.0),p.z);
+    return length(q)-depth;
 }
 float3 objectPoint(float3 p) {
     return float3(dot(p,axisX),dot(p,axisY),dot(p,axisZ));
@@ -42,13 +43,15 @@ half4 main(float2 xy) {
     // The distance texture also stores a smooth analytic 2D gradient. This avoids
     // differentiating half-float samples, which would amplify quantization bands.
     float3 surfaceData=surfaceAt(best.xy);
-    float2 q=float2(max(surfaceData.x+0.62,0.0),best.z);
+    float2 q=float2(max(surfaceData.x+depth,0.0),best.z);
     float3 n=normalize(float3(q.x*surfaceData.yz,q.y));
     // Blend the broad face toward a soft dome so the outline's medial axes
     // cannot create diagonal lighting creases on squares, stars or hexagons.
     float domeBlend=0.92*smoothstep(0.05,0.48,-surfaceData.x);
     float3 domeNormal=normalize(float3(best.xy*0.65,best.z));
     n=normalize(mix(n,domeNormal,domeBlend));
+    // A true ball (depth 1) is lit from its exact surface normal, not the soft dome used by the slab shapes.
+    if(depth>0.99) n=normalize(best);
     n=normalize(n.x*axisX+n.y*axisY+n.z*axisZ);
     float3 key=normalize(float3(-0.50,-0.65,0.85));
     float3 fill=normalize(float3(0.8,0.1,0.6));

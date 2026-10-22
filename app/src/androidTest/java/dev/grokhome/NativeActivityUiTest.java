@@ -17,6 +17,9 @@ public class NativeActivityUiTest {
     private static Object field(Object owner,String name)throws Exception{Field f=owner.getClass().getDeclaredField(name);f.setAccessible(true);return f.get(owner);}
     private static void invoke(Object owner,String name)throws Exception{Method m=owner.getClass().getDeclaredMethod(name);m.setAccessible(true);m.invoke(owner);}
     private static TextView text(View view,String value){if(view instanceof TextView && ((TextView)view).getText().toString().equals(value))return (TextView)view;if(view instanceof ViewGroup){ViewGroup group=(ViewGroup)view;for(int i=0;i<group.getChildCount();i++){TextView result=text(group.getChildAt(i),value);if(result!=null)return result;}}return null;}
+    private FirstRunTestGate firstRun;
+    @Before public void hideFirstRun(){firstRun=new FirstRunTestGate();}
+    @After public void restoreFirstRun(){firstRun.restore();}
     @Test public void nativeContactExpandsAndDraftSurvivesRotationAndDismiss()throws Exception{
         final String[] originalDraft=new String[1];
         try(ActivityScenario<HomeActivity> scenario=ActivityScenario.launch(HomeActivity.class)){

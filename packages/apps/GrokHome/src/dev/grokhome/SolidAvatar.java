@@ -9,6 +9,7 @@ final class SolidAvatar {
     private static final int AROUND=96,LAYERS=20;
     private static final double DEPTH=.62;
     private SmoothAvatar smooth;
+    private final boolean ball;
     private final Vertex[][] mesh=new Vertex[LAYERS+1][AROUND];
     private final Face[] faces=new Face[LAYERS*AROUND];
     private final float[] triangles=new float[faces.length*12];
@@ -25,6 +26,7 @@ final class SolidAvatar {
         Face(Vertex a,Vertex b,Vertex c,Vertex d){this.a=a;this.b=b;this.c=c;this.d=d;}
     }
     SolidAvatar(android.content.Context context,String shape){
+        ball=shape.equals("sphere");
         if(android.os.Build.VERSION.SDK_INT>=33)try{smooth=new SmoothAvatar(context,shape);}catch(RuntimeException error){android.util.Log.e("GrokHomeRender","GPU unavailable; using mesh",error);}
         Path path=outline(shape);PathMeasure measure=new PathMeasure(path,true);float[] p=new float[2];
         for(int i=0;i<AROUND;i++){measure.getPosTan(measure.getLength()*i/AROUND,p,null);outlineX[i]=p[0];outlineY[i]=p[1];}
@@ -32,16 +34,17 @@ final class SolidAvatar {
             double latitude=-Math.PI/2+Math.PI*layer/LAYERS,cos=Math.cos(latitude),sin=Math.sin(latitude);
             // A rounded extrusion: broad, softly domed faces and a rounded edge,
             // rather than pulling every lobe into a pinched center like a sphere.
-            double scale=Math.sqrt(Math.max(0,cos)),height=Math.copySign(Math.sqrt(Math.abs(sin)),sin);
+            double scale=ball?Math.max(0,cos):Math.sqrt(Math.max(0,cos)),height=ball?sin:Math.copySign(Math.sqrt(Math.abs(sin)),sin);
             for(int i=0;i<AROUND;i++){
                 int before=(i+AROUND-1)%AROUND,after=(i+1)%AROUND;
                 double dx=outlineX[after]-outlineX[before],dy=outlineY[after]-outlineY[before];
-                Vertex v=new Vertex();v.x=outlineX[i]*scale;v.y=outlineY[i]*scale;v.z=DEPTH*height;
+                Vertex v=new Vertex();v.x=outlineX[i]*scale;v.y=outlineY[i]*scale;v.z=(ball?1.0:DEPTH)*height;
                 double ds=Math.abs(cos)<1e-8?0:-.5*sin/Math.sqrt(cos);
                 double dz=Math.abs(sin)<1e-8?0:DEPTH*.5*cos/Math.sqrt(Math.abs(sin));
                 double nx=dy*dz,ny=-dx*dz,nz=-(outlineX[i]*dy-outlineY[i]*dx)*ds;
                 if(layer==0 || layer==LAYERS){nx=0;ny=0;nz=layer==0?-1:1;}
                 else if(layer==LAYERS/2){nx=dy;ny=-dx;nz=0;}
+                if(ball){nx=v.x;ny=v.y;nz=v.z;}
                 double n=Math.sqrt(nx*nx+ny*ny+nz*nz);v.nx=nx/n;v.ny=ny/n;v.nz=nz/n;mesh[layer][i]=v;
             }
         }
@@ -56,10 +59,11 @@ final class SolidAvatar {
             p.cubicTo(.91f,.33f,.38f,.78f,0,1.02f);p.cubicTo(-.38f,.78f,-.91f,.33f,-.98f,-.17f);
             p.cubicTo(-1.10f,-.75f,-.48f,-1.15f,0,-.46f);p.close();return p;
         }
-        if(shape.equals("hexagon") || shape.equals("star")){
-            int count=shape.equals("hexagon")?6:12;float[] x=new float[count],y=new float[count];
-            for(int i=0;i<count;i++){double a=i*2*Math.PI/count-(shape.equals("star")?Math.PI/2:0),r=shape.equals("star") && i%2==1?.65:.99;x[i]=(float)(r*Math.cos(a));y[i]=(float)(r*Math.sin(a));}
-            float rounding=shape.equals("star")?.26f:.13f;
+        if(shape.equals("hexagon") || shape.equals("star") || shape.equals("triangle")){
+            int count=shape.equals("hexagon")?6:shape.equals("triangle")?3:12;float[] x=new float[count],y=new float[count];
+            float radius=shape.equals("triangle")?1.24f:.99f,drop=shape.equals("triangle")?.12f:0;
+            for(int i=0;i<count;i++){double a=i*2*Math.PI/count-(shape.equals("hexagon")?0:Math.PI/2),r=shape.equals("star") && i%2==1?.65:radius;x[i]=(float)(r*Math.cos(a));y[i]=(float)(r*Math.sin(a))+drop;}
+            float rounding=shape.equals("star")?.26f:shape.equals("triangle")?.22f:.13f;
             for(int i=0;i<count;i++){
                 int before=(i+count-1)%count,after=(i+1)%count;
                 float a=x[i]*(1-rounding)+x[before]*rounding,b=y[i]*(1-rounding)+y[before]*rounding;
@@ -85,7 +89,7 @@ final class SolidAvatar {
     double surfaceZ(double x,double y){
         if(smooth!=null)return smooth.surfaceZ(x,y);
         // Find the intersection of a ray from the center with this upright outline.
-        double radius=Math.hypot(x,y);if(radius<.00001)return DEPTH;
+        double radius=Math.hypot(x,y);if(radius<.00001)return ball?1.0:DEPTH;
         double dx=x/radius,dy=y/radius,edge=1;
         for(int i=0;i<AROUND;i++){
             int j=(i+1)%AROUND;double sx=outlineX[j]-outlineX[i],sy=outlineY[j]-outlineY[i],den=dx*sy-dy*sx;
@@ -93,9 +97,11 @@ final class SolidAvatar {
             double t=(outlineX[i]*sy-outlineY[i]*sx)/den,u=(outlineX[i]*dy-outlineY[i]*dx)/den;
             if(t>0 && u>=0 && u<=1){edge=t;break;}
         }
+        if(ball)return Math.sqrt(Math.max(0,1-radius*radius/(edge*edge)));
         return DEPTH*Math.pow(Math.max(0,1-Math.pow(radius/edge,4)),.25);
     }
     void draw(Canvas canvas,Motion motion,int baseColor,float radius){
+        // Carousel side bots pass a hue-preserving brightness scale, at most 15% darker.
         if(smooth!=null && canvas.isHardwareAccelerated()){smooth.draw(canvas,motion,baseColor,radius);return;}
         motion.rotate(1,0,0,axisX);motion.rotate(0,1,0,axisY);motion.rotate(0,0,1,axisZ);
         for(Vertex[] ring:mesh)for(Vertex v:ring){

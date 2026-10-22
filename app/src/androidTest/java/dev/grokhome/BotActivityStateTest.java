@@ -29,4 +29,26 @@ public class BotActivityStateTest {
             .put(new JSONObject().put("id","contact").put("kind","contact")).put(new JSONObject().put("id","user").put("kind","message").put("role","You"));
         assertEquals("bot#8",BotActivityState.token(BotActivityState.latestReply(entries,"Nova")));
     }
+    @Test public void newestUnreadPreviewIsStoredBoundedAndDropsTheRestOfTheBody()throws Exception{
+        BotActivityState state=new BotActivityState(prefs);state.update(summary("",0,0,false,false));
+        String secret="SECRET-TAIL "+"private ".repeat(30);
+        String headline="Ready for review";
+        JSONArray entries=new JSONArray()
+            .put(new JSONObject().put("id","old").put("kind","message").put("role","Nova").put("seq","1").put("updatedSeq","1").put("time",1).put("text","older"))
+            .put(new JSONObject().put("id","user").put("kind","message").put("role","You").put("text",secret))
+            .put(new JSONObject().put("id","new").put("kind","message").put("role","Nova").put("seq","2").put("updatedSeq","2").put("time",2).put("text","**"+headline+"**\n\n"+secret));
+        state.update(new JSONObject().put("bot","Nova").put("stale",false).put("working",false).put("entries",entries));
+        assertTrue(state.unread("Nova"));assertEquals(headline,state.preview("Nova"));
+        assertFalse(prefs.getString("activity_preview_Nova","").contains("SECRET-TAIL"));
+        state.update(summary("new",2,2,false,false).put("latestUnreadPreview",""));
+        assertEquals(headline,state.preview("Nova"));
+        state.update(summary("next",3,3,false,false).put("latestUnreadPreview",""));
+        assertEquals("",state.preview("Nova"));
+        state.update(summary("next",3,3,false,false).put("latestUnreadPreview","Ship the build"));
+        assertEquals("Ship the build",state.preview("Nova"));
+        state.update(summary("huge",4,4,false,false).put("latestUnreadPreview","word ".repeat(40)+secret));
+        assertTrue(state.preview("Nova").codePointCount(0,state.preview("Nova").length())<=60);
+        assertFalse(state.preview("Nova").contains("SECRET-TAIL"));
+        state.viewed("Nova",prefs.getString("activity_token_Nova",""));assertFalse(state.unread("Nova"));
+    }
 }

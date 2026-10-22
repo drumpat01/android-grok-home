@@ -1,42 +1,63 @@
 # Android Grok Home
 
-An unofficial native Android home launcher with animated bot avatars, voice and text conversations, and a computer-side bridge to existing Grok Bots through Cursor BDK.
+An unofficial native Android home launcher with animated bot avatars, voice and text conversations, and a computer-side bridge to **your own existing Grok Bots** through Cursor BDK.
 
-This is a standalone APK. Installing it does not flash firmware. Android 11 or later is required. This project is independent of xAI, Cursor, Samsung, and Google.
+This is a standalone APK. Installing it does not flash firmware. Android 11 or later is required. This project is independent of xAI, Cursor, Samsung, and Google. No bots, accounts, keys or conversations are included: you bring your own.
+
+## Set it up with an AI agent
+
+Point your coding agent (Claude Code, Codex, Cursor, or similar) at this repository and say:
+
+> Read AGENTS.md and set up Grok Home for me. Ask me for anything you need.
+
+[AGENTS.md](AGENTS.md) is written for agents: a read-only preflight (`python3 scripts/doctor.py`), the exact commands in order with what to expect, what the agent must ask you for (your bots' exact names, how your device connects, the Cursor sign-in), and what it must never do (message your bots to "test", expose ports, commit secrets). A person can follow it just as well.
 
 ## Features
 
 - Animated avatars and a swipeable bot carousel, with stage appearance controls.
+- Ambient wall: your whole team at a glance, with working rings, "needs you" hands, unread dots and finish confetti. Settings > **Demo mode** shows every state without contacting any bot.
 - Per-bot chat history, drafts, unread indicators, and foreground activity summaries.
-- Android speech recognition and text-to-speech, task progress, and cancellation.
-- Ambient mode and optional private remote access through Tailscale.
+- Android speech recognition and text-to-speech, task progress, and cancellation. Optional offline "Hey Bots" wake word.
+- Optional private remote access through Tailscale, with a connection sheet that explains what is wrong in plain language.
 - A private APK update server.
+- A roster tool: add or remove your bots from one list and everything stays in step.
 
 ## Build
 
-Install JDK 17 and an Android SDK with platform 34 and build tools. Set `ANDROID_HOME`, or create an ignored `local.properties` containing `sdk.dir=/absolute/path/to/android-sdk`.
+Install JDK 17 and an Android SDK with platform 34 and build tools. Set `ANDROID_HOME`, or create an ignored `local.properties` containing `sdk.dir=/absolute/path/to/android-sdk`. Then check the machine:
 
 ```sh
-./gradlew assembleDebug testDebugUnitTest lintDebug assembleDebugAndroidTest
+python3 scripts/doctor.py
+./gradlew assembleDebug
 ```
 
-The debug APK is `app/build/outputs/apk/debug/app-debug.apk`. Instrumentation tests require a connected emulator or Android device. Debug builds are for development; keep your own signing key private if distributing release builds.
+The debug APK is `app/build/outputs/apk/debug/app-debug.apk`. Debug builds are for development; keep your own signing key private if distributing release builds. The optional wake-word model is fetched with `python3 scripts/fetch-wake-model.py` (about 40 MB, checksum-verified); without it everything else works.
 
-## Configure existing bots
+## Configure your own bots
 
-Install Node.js 22.13 or later and Python 3.10 or later. From the repository root:
+Install Node.js 22.13 or later and Python 3.10 or later. The repository ships with an **example roster** (Max, Scout, Nova, ...). These are not real bots; replace them with yours. From the repository root:
 
 ```sh
 cd backend/bot-bridge
 npm ci
-cp bots.example.json bots.local.json
+npx bdk login            # you complete the browser sign-in
+cd ../..
 ```
 
-Edit the ignored `bots.local.json` with the exact names of bots you already own. Verify names in your account before sending: an unknown name may cause the upstream service to create a bot. The example config uses Max; only keep that name if your account already owns that bot. The names and colors in `BotIdentity.java` are illustrative display presets. Max is the coordinator name used by the optional routing and voice-wake features; configure an existing bot named Max to use those features.
+List your bots by their exact names (the first one is the primary: crown, big wall tile, voice shortcuts) and let the tool update every place the roster lives:
+
+```json
+[ {"name": "Alice", "color": "blue", "shape": "sphere"}, {"name": "Build Bot", "color": "orange", "shape": "hexagon"} ]
+```
 
 ```sh
-npx bdk login
-cd ../..
+python3 scripts/roster/sync_roster.py my-bots.json           # dry run
+python3 scripts/roster/sync_roster.py my-bots.json --apply
+```
+
+See [docs/ROSTER.md](docs/ROSTER.md) for colors, shapes, removing bots and shipping an update. Verify names in your account before sending anything: an unknown name may cause the upstream service to create a bot.
+
+```sh
 bash scripts/start-bot-bridge.sh
 python3 backend/server.py --enable-bots --disable-xai
 ```
@@ -51,9 +72,11 @@ See [connection setup](docs/SETUP.md) for Windows, LAN, Tailscale and optional x
 python3 -m unittest discover -s backend -v
 cd backend/bot-bridge
 npm test
+cd ../..
+./gradlew testDebugUnitTest
 ```
 
-These commands use synthetic fixtures and do not send messages to live bots. Android instrumentation fixtures use example bot names. Live microphone quality and account-specific routing require your own device checks.
+These use synthetic fixtures and do not send messages to live bots. The Android unit tests assert against the example roster, so after you replace it some wall, carousel and needs-you tests will fail; that is expected. Live microphone quality and account-specific routing require your own device checks.
 
 ## Security and limitations
 

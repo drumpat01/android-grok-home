@@ -1,4 +1,5 @@
 <resources>
+    <color name="border_interactive">#6B7079</color>
     <style name="GrokTheme" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowBackground">#000000</item>

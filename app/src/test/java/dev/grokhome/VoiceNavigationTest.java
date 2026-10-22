@@ -29,6 +29,9 @@ public class VoiceNavigationTest {
         assertEquals("Max",VoiceNavigation.parse("  LET me  TALK to Max! ").bot);
         assertEquals("Scout",VoiceNavigation.parse("Let me talk to J D Leads.").bot);
         assertNull(VoiceNavigation.parse("Let me talk to an unknown bot"));
+        assertEquals("Nova",VoiceNavigation.parse("Let me talk to Kitt").bot);
+        assertEquals(VoiceNavigation.Action.HANDOFF,VoiceNavigation.parse("Let me talk to Kitt about the website").action);
+        assertEquals("the website",VoiceNavigation.parse("Let me talk to Kitt about the website").topic);
         assertEquals(VoiceNavigation.Action.HANDOFF,VoiceNavigation.parse("Let me talk to Max about the release").action);
         assertEquals("the release",VoiceNavigation.parse("Let me talk to Max about the release").topic);
     }

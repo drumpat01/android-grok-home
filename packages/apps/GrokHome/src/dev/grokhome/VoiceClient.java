@@ -34,6 +34,7 @@ public final class VoiceClient implements AutoCloseable {
         Thread t = new Thread(r, "voice-timers"); t.setDaemon(true); return t;
     });
     private Session current;
+    private String botName = BotIdentity.PRIMARY;
 
     private static final class Session {
         Call tokenCall; WebSocket socket; AudioIO audio;
@@ -60,6 +61,9 @@ public final class VoiceClient implements AutoCloseable {
         if (!url.isHttps() && !loopback && !LocalNetwork.isPrivateIpv4(url.host())) throw new IllegalArgumentException("Use a home-network IP address or HTTPS");
         if (!url.encodedPath().equals("/")) throw new IllegalArgumentException("Enter the server address without a path");
         return url.newBuilder().addPathSegment("session").build().toString();
+    }
+    public synchronized void setBotName(String name) {
+        if (name != null && !name.isEmpty()) botName = name;
     }
     public synchronized boolean active() { return current != null; }
     public synchronized boolean microphoneEnabled() { return current != null && current.mic; }
@@ -175,7 +179,7 @@ public final class VoiceClient implements AutoCloseable {
     }
     private synchronized void speaking(Session s,boolean value){
         if(current!=s)return;listener.speaking(value);
-        if(value)listener.state("Speaking","Tap the sphere to interrupt");else idle(s);
+        if(value)listener.state("Speaking",BotTalkBack.speakingDetail(botName));else idle(s);
     }
     private void idle(Session s){listener.state(s.mic?"Listening":"Ready when you are",s.mic?"Speak naturally · tap microphone to stop":"Microphone off · tap to speak");}
     public synchronized void setMicrophone(boolean enabled){

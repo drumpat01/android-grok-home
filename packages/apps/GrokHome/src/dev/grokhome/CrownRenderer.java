@@ -13,6 +13,8 @@ final class CrownRenderer {
     private final ArrayList<Face> faces=new ArrayList<>();
     private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path path=new Path(), contact=new Path();
+    private final LightingColorFilter[] dimFilters=new LightingColorFilter[256];
+    private int dimLevel=255;
     private final double[] axisX=new double[3],axisY=new double[3],axisZ=new double[3];
     private static final Comparator<Face> DEPTH=(a,b)->Double.compare(a.depth,b.depth);
 
@@ -47,6 +49,16 @@ final class CrownRenderer {
             strip(4,3,i,j,.69);strip(5,4,i,j,.69);
             faces.add(new Face(rings[2][i],rings[2][j],rings[5][j],rings[5][i],1.12));
         }
+        for(int level=0;level<dimFilters.length;level++)dimFilters[level]=new LightingColorFilter(Color.rgb(level,level,level),0);
+    }
+    /** Side Max darkens with the body. 0 leaves the gold alone. */
+    void setDim(float bodyDim){
+        float keep=1f-Math.max(0f,Math.min(1f,bodyDim));
+        int level=Math.round(keep*255f);
+        if(level<0)level=0;else if(level>255)level=255;
+        if(level==dimLevel)return;
+        dimLevel=level;
+        paint.setColorFilter(level==255?null:dimFilters[level]);
     }
     private void strip(int lower,int upper,int i,int j,double finish){faces.add(new Face(rings[lower][i],rings[lower][j],rings[upper][j],rings[upper][i],finish));}
     void prepare(Motion motion){

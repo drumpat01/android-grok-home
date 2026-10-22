@@ -9,6 +9,7 @@ public final class Motion {
     public void setSpeaking(boolean value) {
         speaking = value;
     }
+    public void seed(double seconds){time=Math.max(0,seconds);}
     public void step(double dt) {
         if(intensity<=0){x=y=yaw=pitch=roll=0;return;}
         dt = Math.max(0, Math.min(dt, 0.05))*intensity; time += dt;

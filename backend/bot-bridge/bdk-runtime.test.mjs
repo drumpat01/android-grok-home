@@ -17,7 +17,7 @@ test('real BDK loads the bridge tools with patched dependencies', { timeout: 300
   try {
     const project = join(dir, 'project');
     await cp(join(source, 'bot'), join(project, 'bot'), { recursive: true });
-    for (const file of ['config.mjs', 'native-activity.mjs']) await cp(join(source, file), join(project, file));
+    for (const file of ['config.mjs', 'native-activity.mjs', 'needs-you.mjs']) await cp(join(source, file), join(project, file));
     await writeFile(join(project, 'package.json'), '{"type":"module"}');
     await writeFile(join(project, 'bots.local.json'), '[{"name":"Synthetic Bot","color":"#FFFFFF"}]');
     await symlink(join(source, 'node_modules'), join(project, 'node_modules'), 'dir');

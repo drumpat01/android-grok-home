@@ -38,3 +38,6 @@ config.local.*
 *.sqlite*
 *.db
 *.dump
+
+# Optional offline wake-word model (fetch with scripts/fetch-wake-model.py)
+app/src/main/assets/vosk-model-*.zip
