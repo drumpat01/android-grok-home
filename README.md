@@ -4,6 +4,17 @@ An unofficial native Android home launcher with animated bot avatars, voice and 
 
 This is a standalone APK. Installing it does not flash firmware. Android 11 or later is required. This project is independent of xAI, Cursor, Samsung, and Google. No bots, accounts, keys or conversations are included: you bring your own.
 
+![Grok Home's ambient wall in Demo mode: a crowned lead bot beside a grid of animated bots, some working, some with a hand raised, some celebrating with confetti](docs/media/demo.gif)
+
+<sub>The ambient wall in **Demo mode** (Settings > Demo mode), which shows every state without contacting any bot. The bots are the built-in example roster. [Watch the full-quality MP4](docs/media/demo.mp4).</sub>
+
+<p align="center">
+  <img src="docs/media/bot.png" width="49%" alt="One bot up close, a pink heart with a working ring under it, beside its chat panel">
+  <img src="docs/media/first-run.png" width="49%" alt="The first-run setup panel: meet the lead bot, connect your computer, allow the microphone, set as Home">
+</p>
+
+<sub>Left: a single bot with its working ring and chat. Right: the guided first-run setup.</sub>
+
 ## Set it up with an AI agent
 
 Point your coding agent (Claude Code, Codex, Cursor, or similar) at this repository and say:
